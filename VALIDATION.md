@@ -10,6 +10,8 @@ The marked-prefix HTTP install/update/uninstall smoke test passed, including che
 
 Permission setup explains the system-owned approval once and can reopen System Settings. It does not grant or claim Full Disk Access. mCopy's selection now travels over a named pasteboard rather than reading general-clipboard contents. Permission retention after an ad-hoc signature changes is not guaranteed.
 
+The GitHub release was installed on the original Mac only after its existing transfer queue became empty. Actual Finder Copy → Paste to Folder and Cut → Paste to Folder both showed verified completion through the installed app, without clipboard permission alerts. The setup explanation was displayed and existing permissions were retained for these generated-file tests. Patch 3.2.1 also settles the progress indicator when idle or stopped.
+
 ## Transfer and recovery suite
 
 54 tests passed on Apple Silicon macOS before publishing 3.1.0. Coverage includes:

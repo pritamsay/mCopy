@@ -34,8 +34,7 @@ final class TransferWindow: NSWindowController {
         progressBar.minValue = 0
         progressBar.maxValue = 100
         progressBar.style = .bar
-        progressBar.isIndeterminate = true
-        progressBar.startAnimation(nil)
+        progressBar.isIndeterminate = false
         percentage.alignment = .right
         let progressRow = NSStackView(views: [progressBar, percentage])
         progressRow.spacing = 12
@@ -104,6 +103,7 @@ final class TransferWindow: NSWindowController {
         status.stringValue = message
         cancelButton.isEnabled = false
         progressBar.stopAnimation(nil)
+        progressBar.isIndeterminate = false
     }
 
     func show() { window?.orderFrontRegardless() }
