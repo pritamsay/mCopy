@@ -25,4 +25,8 @@ These checks exposed and fixed server-side timestamp refreshes and unsupported e
 
 The release app and Finder extension cross-compile for arm64 and x86_64 with a macOS 13 deployment target. Local tests execute on Apple Silicon; execution on Intel hardware is not claimed. Both architectures and ad-hoc code signatures are checked before packaging. No Apple Developer ID signing identity was available, so the release is not notarized.
 
-The packaging smoke test passed using a marked temporary install prefix and a local HTTP fixture. It verified corrupt-download rejection, repeated install/uninstall, the packaged executable's actual copy/move engine, legacy cleanup, and unchanged fingerprints for the real installed executable and user data. Login/Finder registrations were not changed by this isolated test. Live uninstall of the current app is performed separately after publishing, as requested.
+The packaging smoke test passed using a marked temporary install prefix and a local HTTP fixture. It verified corrupt-download rejection, repeated install/uninstall, the packaged executable's actual copy/move engine, legacy cleanup, and unchanged fingerprints for the real installed executable and user data. Login/Finder registrations were not changed by this isolated test.
+
+The actual public GitHub raw-script and Release-asset URLs also passed isolated download/install, packaged copy/move, and uninstall checks. GitHub Actions passed all tests, both architecture builds, shell validation, signatures, and release packaging.
+
+Live uninstall successfully stopped the old app, disabled its login item, unregistered Finder integration, and removed the installed bundle and ordinary user data. macOS protected the sandbox container metadata from command-line removal. The uninstaller returns a failure with specific permission/Finder instructions instead of claiming that protected remnants were deleted.

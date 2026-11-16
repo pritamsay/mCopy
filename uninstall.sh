@@ -88,6 +88,11 @@ if [[ "$ISOLATED" == 0 ]]; then
     done
 fi
 
+# Clear the known legacy lock even if macOS later protects container metadata.
+rm -f "$LIBRARY/Application Support/Mover/transfer.json.lock"
+rmdir "$LIBRARY/Application Support/Mover" 2>/dev/null || true
+
+REMOVAL_FAILED=0
 rm -rf "$INSTALLED_APP" \
     "$LIBRARY/Application Support/mCopy" \
     "$LIBRARY/Preferences/$APP_ID.plist" "$LIBRARY/Preferences/$EXTENSION_ID.plist" \
@@ -96,7 +101,10 @@ rm -rf "$INSTALLED_APP" \
     "$LIBRARY/Saved Application State/$EXTENSION_ID.savedState" \
     "$LIBRARY/Containers/$APP_ID" "$LIBRARY/Containers/$EXTENSION_ID" \
     "$LIBRARY/Application Scripts/$APP_ID" "$LIBRARY/Application Scripts/$EXTENSION_ID" \
-    "$LIBRARY/HTTPStorages/$APP_ID" "$LIBRARY/Logs/myCopy"
-rm -f "$LIBRARY/Application Support/Mover/transfer.json.lock"
-rmdir "$LIBRARY/Application Support/Mover" 2>/dev/null || true
+    "$LIBRARY/HTTPStorages/$APP_ID" "$LIBRARY/Logs/myCopy" || REMOVAL_FAILED=1
+if [[ "$REMOVAL_FAILED" == 1 ]]; then
+    printf '\nmacOS protected one or more paths listed above. The app and its login/Finder registrations have been removed.\n' >&2
+    printf 'To finish removing protected sandbox metadata, remove that container in Finder, or grant your terminal Full Disk Access, then rerun this command.\n' >&2
+    exit 1
+fi
 printf 'mCopy uninstalled. Completed copies and your original files were retained.\n'
