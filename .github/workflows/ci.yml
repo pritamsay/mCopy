@@ -19,6 +19,8 @@ jobs:
       - name: Validate release packaging
         run: |
           zsh scripts/package.sh
-          lipo dist/myCopy.app/Contents/MacOS/myCopy -verify_arch arm64 x86_64
-          lipo dist/myCopy.app/Contents/PlugIns/MyCopyFinder.appex/Contents/MacOS/MyCopyFinder -verify_arch arm64 x86_64
+          APP_ARCHS="$(lipo -archs dist/myCopy.app/Contents/MacOS/myCopy)"
+          EXTENSION_ARCHS="$(lipo -archs dist/myCopy.app/Contents/PlugIns/MyCopyFinder.appex/Contents/MacOS/MyCopyFinder)"
+          [[ " $APP_ARCHS " == *" arm64 "* && " $APP_ARCHS " == *" x86_64 "* ]]
+          [[ " $EXTENSION_ARCHS " == *" arm64 "* && " $EXTENSION_ARCHS " == *" x86_64 "* ]]
           codesign --verify --deep --strict dist/myCopy.app
