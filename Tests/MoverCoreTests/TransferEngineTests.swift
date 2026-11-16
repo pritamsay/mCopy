@@ -458,6 +458,69 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertFalse(files.fileExists(atPath: journal.path))
     }
 
+    func testProgressTracksBytesAndVerificationBeforeMoveCompletion() throws {
+        let first = try largeFile()
+        let second = try write("tiny.txt", text: "small")
+        let engine = TransferEngine(journal: journal)
+        let lock = NSLock()
+        var updates: [MoverCore.Progress] = []
+        engine.onProgress = { progress in
+            lock.lock()
+            updates.append(progress)
+            lock.unlock()
+            if progress.fraction == 1 {
+                XCTAssertFalse(self.files.fileExists(atPath: first.path))
+                XCTAssertFalse(self.files.fileExists(atPath: second.path))
+            }
+        }
+        try engine.run(prepare(engine, [first, second], move: true))
+        let ordered = updates.sorted { $0.sequence < $1.sequence }
+        XCTAssertTrue(ordered.contains { !$0.copyingFile.isEmpty && $0.fraction > 0 })
+        XCTAssertTrue(ordered.contains { !$0.verifyingFile.isEmpty && $0.fraction < 1 })
+        for pair in zip(ordered, ordered.dropFirst()) { XCTAssertLessThanOrEqual(pair.0.fraction, pair.1.fraction) }
+        let final = try XCTUnwrap(ordered.last)
+        XCTAssertEqual(final.fraction, 1)
+        XCTAssertEqual(final.completedFiles, 2)
+        XCTAssertEqual(final.totalFiles, 2)
+        XCTAssertEqual(final.totalBytes, 3 * 1_048_576 + 5)
+        XCTAssertEqual(final.copiedBytes, final.totalBytes)
+    }
+
+    func testEarlierVerifierDoesNotRegressLaterFileProgress() throws {
+        let first = try write("a.txt", text: "first")
+        let second = try write("b.txt", text: "second")
+        let engine = TransferEngine(journal: journal)
+        let tracker = TransferProgress()
+        tracker.begin(try prepare(engine, [first, second]))
+        _ = tracker.update("a.txt", index: 0, portion: 0.8, lane: "verify")
+        let copying = tracker.update("b.txt", index: 1, portion: 0.6, lane: "copy")
+        let checking = tracker.update("a.txt", index: 0, portion: 0.9, lane: "verify")
+        XCTAssertGreaterThanOrEqual(checking.fraction, copying.fraction)
+        XCTAssertEqual(checking.copyingFile, "b.txt")
+        XCTAssertEqual(checking.verifyingFile, "a.txt")
+        let done = tracker.update("a.txt", index: 0, portion: 1)
+        XCTAssertEqual(done.copyingFile, "b.txt")
+        XCTAssertTrue(done.verifyingFile.isEmpty)
+        XCTAssertGreaterThan(done.sequence, checking.sequence)
+    }
+
+    func testEmptyFolderAndSkippedFileProgressStillCompletes() throws {
+        let folder = source.appendingPathComponent("empty")
+        try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        let original = try write()
+        try Data("existing".utf8).write(to: target())
+        let engine = TransferEngine(journal: journal)
+        engine.onConflict = { _, _ in Decision(.skip) }
+        var last: MoverCore.Progress?
+        engine.onProgress = { last = $0 }
+        try engine.run(prepare(engine, [folder, original], move: true))
+        XCTAssertEqual(last?.fraction, 1)
+        XCTAssertEqual(last?.completedFiles, 1)
+        XCTAssertEqual(last?.totalFiles, 1)
+        XCTAssertTrue(last?.message.contains("skipped") == true)
+        XCTAssertTrue(files.fileExists(atPath: original.path))
+    }
+
     func testBusyNASWaitsForTwoSuccessfulProbesBeforeRetry() throws {
         let original = try largeFile()
         let engine = TransferEngine(journal: journal)

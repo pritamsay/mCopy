@@ -48,7 +48,6 @@ final class MyCopyFinderSync: FIFinderSync {
         let isItem = menuKind == .contextualMenuForItems || menuKind == .contextualMenuForSidebar
         let commands = FinderMenu.commands(hasSelection: isItem && !selected.isEmpty,
             hasClipboard: FinderClipboard.hasSelection(), clickedFolder: folderDestination != nil)
-        guard !commands.isEmpty else { return nil }
         for command in commands {
             switch command {
             case .copy: add(command.rawValue, action: #selector(copyFiles), enabled: true, to: submenu)
@@ -57,6 +56,8 @@ final class MyCopyFinderSync: FIFinderSync {
             case .pasteToFolder: add(command.rawValue, action: #selector(pasteToFolder), enabled: true, to: submenu)
             }
         }
+        if !commands.isEmpty { submenu.addItem(.separator()) }
+        add("Show Transfer Status", action: #selector(showStatus), enabled: true, to: submenu)
         let root = NSMenuItem(title: "mCopy", action: nil, keyEquivalent: "")
         root.submenu = submenu
         menu.addItem(root)
@@ -90,11 +91,12 @@ final class MyCopyFinderSync: FIFinderSync {
     @objc func cutFiles(_ sender: Any?) { FinderClipboard.write(selected, move: true) }
     @objc func pasteFiles(_ sender: Any?) { if let destination = pasteDestination { handoff(destination) } }
     @objc func pasteToFolder(_ sender: Any?) { if let destination = folderDestination { handoff(destination) } }
+    @objc func showStatus(_ sender: Any?) { if let url = URL(string: "mycopy://status") { openApp(url) } }
 
     func handoff(_ destination: URL) {
         let urls = FinderClipboard.files()
         guard !urls.isEmpty else { return }
-        let move = NSPasteboard.general.string(forType: FinderClipboard.operationType) == "move"
+        let move = FinderClipboard.operation() == "move"
         let token = UUID().uuidString
         guard FinderClipboard.write(urls, move: move, token: token) else { return }
         var parts = URLComponents()
@@ -103,6 +105,10 @@ final class MyCopyFinderSync: FIFinderSync {
         parts.queryItems = [URLQueryItem(name: "destination", value: destination.path),
                             URLQueryItem(name: "token", value: token)]
         guard let url = parts.url else { return }
+        openApp(url)
+    }
+
+    func openApp(_ url: URL) {
         // Launch the containing app explicitly, even when another build of myCopy exists.
         let application = Bundle.main.bundleURL.deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

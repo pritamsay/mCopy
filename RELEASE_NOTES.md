@@ -1,10 +1,10 @@
-# mCopy 3.1.0
+# mCopy 3.2.0
 
-- One-command installation and uninstallation from GitHub.
-- Prebuilt universal app for Apple Silicon and Intel, macOS 13 or later.
-- SHA-256 and code-signature checks before installation.
-- Clean login-item and Finder-extension removal, with recovery of unfinished transfers.
-- Legacy build cleanup without needing Xcode on the destination Mac.
-- Finder-only Copy/Cut/Paste workflow, background verification, NAS retries, SMB timestamp handling, and replacement recovery.
+- Automatic copy/move status window with progress, bytes, file counts, concurrent verification, and NAS waiting messages.
+- Progress is weighted by bytes and remains monotonic while the next file copies. Completion reaches 100% only after verification finishes.
+- Hide the window without stopping work; reopen from Finder's Show Transfer Status menu. Cancel safely with confirmation.
+- One-time file-access setup instructions, with a Permissions button to reopen them. macOS owns the actual access approvals.
+- A private named pasteboard shares only mCopy selections, avoiding general-clipboard content reads and their repeated access prompts.
+- Existing GitHub install/uninstall commands, universal binaries, automatic startup, NAS recovery, and checksum-before-delete move behavior are retained.
 
-The app is signed locally, not Apple-notarized. macOS may request approval for the Finder extension, login item, or running the app. Transfer tests and a real connected-SMB-share test passed; physical disconnect/power-loss tests and execution on Intel hardware are not claimed.
+The app is ad-hoc signed, not Apple-notarized. macOS may request approval for running the app, Finder integration, login startup, or protected locations. Permissions may need approval again after signature-changing updates or a clean uninstall. Physical disconnect/power-loss tests and execution on Intel hardware are not claimed.

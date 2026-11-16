@@ -37,6 +37,7 @@ public final class TransferEngine {
     let stateLock = NSRecursiveLock()
     var activeJob: Job?
     let networkLock = NSLock()
+    let progress = TransferProgress()
     var networkQuietUntil = Date.distantPast
     var allChoice: Choice?
     let chunkSize = 1_048_576
@@ -168,6 +169,7 @@ public final class TransferEngine {
             stateLock.lock()
             activeJob = job
             stateLock.unlock()
+            progress.begin(job)
             defer {
                 stateLock.lock()
                 activeJob = nil
@@ -190,7 +192,11 @@ public final class TransferEngine {
             let skipped = job.entries.filter { $0.state == "skipped" }.count
             if !keepCompletedJournal { try files.removeItem(at: journal) }
             let message = skipped == 0 ? "Transfer complete." : "Transfer complete. \(skipped) item(s) skipped; originals kept."
-            onProgress(Progress(message: message, fraction: 1))
+            onProgress(Progress(message: message, fraction: 1,
+                copiedBytes: job.entries.reduce(0) { $0 + $1.size },
+                totalBytes: job.entries.reduce(0) { $0 + $1.size },
+                completedFiles: job.entries.filter { !$0.directory }.count,
+                totalFiles: job.entries.filter { !$0.directory }.count, sequence: UInt64.max))
         }
     }
 
@@ -209,9 +215,8 @@ public final class TransferEngine {
         return false
     }
 
-    func report(_ message: String, index: Int, job: Job, portion: Double = 0) {
-        let fraction = (Double(index) + min(1, max(0, portion))) / Double(max(1, job.entries.count))
-        onProgress(Progress(message: message, fraction: fraction))
+    func report(_ message: String, index: Int, job: Job, portion: Double = 0, lane: String = "") {
+        onProgress(progress.update(message, index: index, portion: portion, lane: lane))
     }
 
     func safeTarget(_ job: Job, _ relative: String) throws -> URL {

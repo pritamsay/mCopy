@@ -1,5 +1,15 @@
 # Validation
 
+## 3.2.0 status and permission update
+
+57 tests passed before publishing, including byte-weighted progress, concurrent copy/verification ordering, final completion only after verified move cleanup, and empty-folder/skipped-file completion. Both universal architectures built successfully.
+
+The packaged `--ui-self-test` displayed the real status window during a generated 32 MiB move. Its percentage, processed bytes, file counts, and separate copy/verification labels were observed in the macOS UI. Destination bytes matched, originals were removed only after verification, and generated fixtures were cleaned up. This test does not touch the real queue, clipboard, permissions or login registrations.
+
+The marked-prefix HTTP install/update/uninstall smoke test passed, including checksum rejection and unchanged fingerprints for the real installation and user data. The connected SMB test also passed copy, move, replacement and interrupted-replacement recovery with generated files only.
+
+Permission setup explains the system-owned approval once and can reopen System Settings. It does not grant or claim Full Disk Access. mCopy's selection now travels over a named pasteboard rather than reading general-clipboard contents. Permission retention after an ad-hoc signature changes is not guaranteed.
+
 ## Transfer and recovery suite
 
 54 tests passed on Apple Silicon macOS before publishing 3.1.0. Coverage includes:

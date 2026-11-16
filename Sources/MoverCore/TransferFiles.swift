@@ -41,6 +41,7 @@ extension TransferEngine {
                     }
                 }
                 try checkpoint(changed, job: &job)
+                for position in changed { report("Skipped · " + job.entries[position].target, index: position, job: job, portion: 1) }
                 return
             case .rename:
                 let newTarget: URL
@@ -100,6 +101,7 @@ extension TransferEngine {
             entry.state = "done"
             job.entries[index] = entry
             try checkpoint(index, job: &job)
+            report(target.lastPathComponent, index: index, job: job, portion: 1)
             return
         }
 
@@ -126,6 +128,7 @@ extension TransferEngine {
 
     func copyResuming(source: URL, temporary: URL, index: Int, job: inout Job) throws {
         try onCopyStarted?(source.path)
+        report(source.lastPathComponent, index: index, job: job, lane: "copy")
         var entry = job.entries[index]
         let input = try FileAccess.openFile(source, flags: O_RDONLY)
         defer { try? input.close() }
@@ -172,7 +175,7 @@ extension TransferEngine {
             copied += Int64(count)
             pacedBytes += Int64(count)
             report("Checking saved progress · \(source.lastPathComponent)", index: index, job: job,
-                   portion: entry.size == 0 ? 0 : Double(copied) / Double(entry.size) * 0.8)
+                   portion: entry.size == 0 ? 0 : Double(copied) / Double(entry.size) * 0.8, lane: "copy")
             try pace(bytes: pacedBytes, since: started, limitMB: job.limitMB)
         }
         while copied < entry.size {
@@ -190,7 +193,7 @@ extension TransferEngine {
             // A complete file is synchronized before verification. Per-chunk fsync
             // needlessly stalls SMB writes; resume verifies any surviving prefix.
             report("\(source.lastPathComponent) · \(ByteCountFormatter.string(fromByteCount: copied, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))",
-                   index: index, job: job, portion: entry.size == 0 ? 0.8 : Double(copied) / Double(entry.size) * 0.8)
+                   index: index, job: job, portion: entry.size == 0 ? 0.8 : Double(copied) / Double(entry.size) * 0.8, lane: "copy")
             try afterChunk?()
             try pace(bytes: pacedBytes, since: started, limitMB: job.limitMB)
         }
@@ -211,6 +214,7 @@ extension TransferEngine {
         entry.publicationStamp = try FileAccess.stamp(temporary)
         job.entries[index] = entry
         try checkpoint(index, job: &job)
+        report(source.lastPathComponent, index: index, job: job, portion: 0.8, lane: "copy")
     }
 
     func readExactly(_ handle: FileHandle, count: Int) throws -> Data {
@@ -224,7 +228,7 @@ extension TransferEngine {
         return result
     }
 
-    func hash(_ url: URL, limitMB: Double) throws -> String {
+    func hash(_ url: URL, limitMB: Double, onRead: ((Int64) -> Void)? = nil) throws -> String {
         let input = try FileAccess.openFile(url, flags: O_RDONLY)
         defer { try? input.close() }
         var hasher = SHA256()
@@ -236,6 +240,7 @@ extension TransferEngine {
             if data.isEmpty { break }
             hasher.update(data: data)
             read += Int64(data.count)
+            onRead?(read)
             try pace(bytes: read, since: started, limitMB: limitMB)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()

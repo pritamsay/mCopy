@@ -133,7 +133,7 @@ extension TransferEngine {
     // close-time value. Accept that only after checking actual bytes. If the
     // timestamp changes while hashing, require a second stable, matching read.
     func verifiedStamp(_ url: URL, expected: FileStamp, digest: String, network: Bool,
-                       limitMB: Double, readContents: Bool) throws -> FileStamp {
+                       limitMB: Double, readContents: Bool, onRead: ((Int64) -> Void)? = nil) throws -> FileStamp {
         try beforeIO()
         let info = try FileAccess.status(url)
         let before = FileAccess.stamp(info)
@@ -142,7 +142,7 @@ extension TransferEngine {
             throw TransferError.unsafe("The copied file changed. Original retained.")
         }
         if !readContents && expected.matches(before, onNetwork: network) { return before }
-        guard try hash(url, limitMB: limitMB) == digest else {
+        guard try hash(url, limitMB: limitMB, onRead: onRead) == digest else {
             throw TransferError.unsafe("Copied file contents failed verification. Original retained.")
         }
         let after = try FileAccess.stamp(url)
@@ -150,7 +150,7 @@ extension TransferEngine {
             throw TransferError.unsafe("The copied file changed during verification. Original retained.")
         }
         if before.matches(after, onNetwork: network) { return after }
-        guard network, try hash(url, limitMB: limitMB) == digest else {
+        guard network, try hash(url, limitMB: limitMB, onRead: onRead) == digest else {
             throw TransferError.unsafe("The copied file changed during verification. Original retained.")
         }
         let settled = try FileAccess.stamp(url)

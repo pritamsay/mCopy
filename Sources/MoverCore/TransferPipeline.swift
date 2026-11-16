@@ -84,12 +84,18 @@ extension TransferEngine {
         var verifiedHere = false
         if entry.state == "verifying" {
             try onVerificationStarted?(entry.source.original)
+            report(source.lastPathComponent, index: index, job: job, portion: 0.8, lane: "verify")
             try checkSource(source, entry: entry)
             guard let expected = entry.publicationStamp, let digest = entry.digest else {
                 throw TransferError.unsafe("Verification failed for \(source.lastPathComponent). Original retained.")
             }
+            let reportingJob = job
+            let size = entry.size
             entry.publicationStamp = try verifiedStamp(temporary, expected: expected, digest: digest,
-                network: job.destination.network, limitMB: job.limitMB, readContents: true)
+                network: job.destination.network, limitMB: job.limitMB, readContents: true, onRead: { [self] read in
+                    let checked = size == 0 ? 1 : min(1, Double(read) / Double(size))
+                    report(source.lastPathComponent, index: index, job: reportingJob, portion: 0.8 + checked * 0.14, lane: "verify")
+                })
             try checkSource(source, entry: entry)
             verifiedHere = true
             entry.state = "publishing"

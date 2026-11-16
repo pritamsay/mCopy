@@ -2,7 +2,7 @@ import AppKit
 import ServiceManagement
 import MoverCore
 
-// Finder supplies the files and destination. Only decisions/errors open a dialog.
+// Finder supplies the files and destination. Show status while the workers run.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let worker = DispatchQueue(label: "local.pritam.mycopy.requests", qos: .utility)
     let store = RequestStore(directory: FileManager.default.homeDirectoryForCurrentUser
@@ -11,6 +11,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var quitting = false
     var engine: TransferEngine?
     var activity: NSObjectProtocol?
+    let progressLock = NSLock()
+    var latestProgress: MoverCore.Progress?
+    var latestNotice: String?
+    var progressTimer: Timer?
+    lazy var transferWindow: TransferWindow = {
+        let window = TransferWindow()
+        window.onCancel = { [weak self] in self?.cancelTransfer() }
+        window.onPermissions = { PermissionSetup.show() }
+        return window
+    }()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(receiveURL(_:reply:)),
@@ -20,9 +30,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerLoginItem()
         processNextRequest()
+        DispatchQueue.main.async { PermissionSetup.showIfNeeded() }
     }
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { false }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        transferWindow.show()
+        return false
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -63,16 +77,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func handleURL(_ url: URL) {
-        guard !quitting, url.scheme == "mycopy", url.host == "paste",
+        guard !quitting, url.scheme == "mycopy" else { return }
+        if url.host == "status" { transferWindow.show(); return }
+        guard url.host == "paste",
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
         let items = parts.queryItems ?? []
         guard let token = items.first(where: { $0.name == "token" })?.value,
-              token == NSPasteboard.general.string(forType: FinderClipboard.tokenType),
+              token == FinderClipboard.token(),
               token != UserDefaults.standard.string(forKey: "lastRequestToken"),
               let path = items.first(where: { $0.name == "destination" })?.value, path.hasPrefix("/") else { return }
         let urls = FinderClipboard.files()
         guard !urls.isEmpty, FinderClipboard.hasSelection() else { return }
-        let move = NSPasteboard.general.string(forType: FinderClipboard.operationType) == "move"
+        let move = FinderClipboard.operation() == "move"
         let request = TransferRequest(sources: urls, destination: URL(fileURLWithPath: path), move: move, token: token)
         do {
             try store.save(request)
@@ -84,14 +100,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func processNextRequest() {
         guard !running, !quitting else { return }
         do {
-            guard let request = try store.pending().first else { return }
+            let requests = try store.pending()
+            guard let request = requests.first else { return }
             running = true
+            progressLock.lock()
+            latestProgress = nil
+            latestNotice = nil
+            progressLock.unlock()
+            transferWindow.begin(request, queued: max(0, requests.count - 1))
+            progressTimer?.invalidate()
+            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.refreshProgress() }
             activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Copying and verifying files")
             worker.async { [self] in
                 var continueQueue = true
-                do { try perform(request) }
+                var result = "Transfer stopped."
+                do { result = try perform(request) }
                 catch {
                     continueQueue = false
+                    result = "Transfer paused. Unverified originals were retained."
                     NSLog("mCopy: request retained: %@", error.localizedDescription)
                     if !DispatchQueue.main.sync(execute: { quitting }) {
                         var retained = request
@@ -101,6 +127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 DispatchQueue.main.async { [self] in
+                    refreshProgress()
+                    progressTimer?.invalidate()
+                    progressTimer = nil
+                    if !quitting {
+                        if latestProgress?.fraction == 1, result == "Transfer complete." { transferWindow.finish(latestProgress!.message) }
+                        else { transferWindow.finish(result) }
+                    }
                     running = false
                     engine = nil
                     if let activity { ProcessInfo.processInfo.endActivity(activity) }
@@ -121,15 +154,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.onSameFolderConflict = { [weak self] name, directory in
             DispatchQueue.main.sync { self?.conflict(name, directory: directory, sameFolder: true) ?? Decision(.cancel) }
         }
-        engine.onReconnect = { NSLog("mCopy: %@", $0) }
+        engine.onProgress = { [weak self] progress in
+            guard let self else { return }
+            self.progressLock.lock()
+            if self.latestProgress == nil || progress.sequence >= self.latestProgress!.sequence {
+                self.latestProgress = progress
+                self.latestNotice = nil
+            }
+            self.progressLock.unlock()
+        }
+        engine.onReconnect = { [weak self] message in
+            NSLog("mCopy: %@", message)
+            self?.notice(message)
+        }
         DispatchQueue.main.sync {
+            progressLock.lock()
+            latestProgress = nil
+            progressLock.unlock()
             self.engine = engine
+            transferWindow.cancelButton.isEnabled = !request.cancelled
             if quitting { engine.pause() }
         }
         return engine
     }
 
-    func perform(_ savedRequest: TransferRequest) throws {
+    func perform(_ savedRequest: TransferRequest) throws -> String {
         var request = savedRequest
         while true {
             let engine = makeEngine(request)
@@ -154,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if request.move, !request.cancelled {
                     DispatchQueue.main.sync { FinderClipboard.clear(ifToken: request.token) }
                 }
-                return
+                return request.cancelled ? "Transfer cancelled. Unverified originals were retained." : "Transfer complete."
             } catch {
                 if DispatchQueue.main.sync(execute: { quitting }) { throw error }
                 if request.cancelled {
@@ -166,12 +215,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     request.paused = true
                     try store.save(request)
                     DispatchQueue.main.sync { showError("mCopy retained files for recovery", error) }
-                    return
+                    return "Cancellation paused. Waiting for access to recover files safely."
                 }
                 let cancel: Bool
                 if case TransferError.stopped = error { cancel = true }
                 else {
                     cancel = DispatchQueue.main.sync {
+                        transferWindow.waiting(error.localizedDescription)
                         let alert = NSAlert()
                         alert.messageText = "mCopy could not finish this transfer"
                         alert.informativeText = error.localizedDescription + "\n\nUnverified originals are retained."
@@ -202,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 attempts += 1
                 let delay = min(30.0, 2.0 * pow(2, Double(min(4, attempts - 1))))
                 NSLog("mCopy: waiting for NAS before scanning files: %@", error.localizedDescription)
+                notice("Waiting for NAS before scanning files. Retrying in \(Int(delay)) seconds…")
                 try engine.waitForRetry(delay)
             }
         }
@@ -247,5 +298,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    func notice(_ message: String) {
+        progressLock.lock()
+        latestNotice = message
+        progressLock.unlock()
+    }
+
+    func refreshProgress() {
+        progressLock.lock()
+        let progress = latestProgress
+        let message = latestNotice
+        progressLock.unlock()
+        if let progress { transferWindow.update(progress) }
+        if let message { transferWindow.waiting(message) }
+    }
+
+    func cancelTransfer() {
+        guard running, let current = engine else { return }
+        let alert = NSAlert()
+        alert.messageText = "Cancel this transfer?"
+        alert.informativeText = "Completed copies are kept. Unverified originals are retained and partial files are recovered safely."
+        alert.addButton(withTitle: "Keep Transferring")
+        alert.addButton(withTitle: "Cancel Transfer")
+        if alert.runModal() == .alertSecondButtonReturn, running, engine === current {
+            current.pause()
+            notice("Cancelling safely. Waiting for current disk operations…")
+        }
     }
 }

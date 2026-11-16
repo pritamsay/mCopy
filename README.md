@@ -32,7 +32,17 @@ Volumes containing unfinished transfers must be available for safe recovery. If 
 
 Copy retains the original. Cut moves it and deletes the original only after the destination verifies. Pasting into the same folder asks for a new name. Other duplicate names offer Replace, Rename, and Skip. Folder Replace merges folders and keeps unrelated destination files.
 
-There is no settings window, progress window, Dock icon, menu bar item, or keyboard interception. Only filename/conflict decisions and errors needing attention show a dialog. The app starts at login and resumes saved requests.
+A transfer status window appears when copying or moving. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. Hide/close the window to keep transferring in the background. Reopen it through **mCopy → Show Transfer Status** in Finder. **Cancel Transfer** safely cancels the active request after confirmation.
+
+The app has no Dock icon or menu bar item. It starts at login and resumes saved requests.
+
+## One-time access setup
+
+The installed app explains file access once. To authorize protected folders and disks broadly, use **Open System Settings**, add `~/Applications/myCopy.app` under **Privacy & Security → Full Disk Access**, and enable it. Alternatively choose **Use Existing Permissions** and allow individual locations through macOS prompts. The status window's **Permissions…** button reopens these instructions.
+
+macOS retains granted permissions for the installed app; mCopy never grants them to itself or changes system privacy settings. Revocation, a clean uninstall, or an update with a different signing identity can require approval again. This release is ad-hoc signed, so permission retention across future builds is not guaranteed. NAS login credentials and server permissions are separate.
+
+mCopy shares its own file selection through a named pasteboard and reads only general-clipboard metadata to notice when another app replaces the selection. It does not read other apps' general-clipboard contents or require broad clipboard access.
 
 ## Reliability
 

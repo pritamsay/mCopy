@@ -9,6 +9,7 @@ import hashlib
 import http.server
 import json
 import os
+import plistlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -80,7 +81,9 @@ def main():
         environment["MCOPY_RELEASE_BASE_URL"] = base
         run(["/bin/bash", "install.sh"], environment)
         status = json.loads(run([str(executable), "--status"]).stdout)
-        assert status["version"] == "3.1.0"
+        with (project / "Resources/App-Info.plist").open("rb") as info_file:
+            expected_version = plistlib.load(info_file)["CFBundleShortVersionString"]
+        assert status["version"] == expected_version
         assert Path(status["bundlePath"]) == installed
         run([str(executable), "--self-test"])
         run(["/bin/bash", "install.sh"], environment)

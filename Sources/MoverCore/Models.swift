@@ -32,6 +32,13 @@ public struct Decision {
 public struct Progress {
     public var message: String
     public var fraction: Double
+    public var copiedBytes: Int64 = 0
+    public var totalBytes: Int64 = 0
+    public var completedFiles = 0
+    public var totalFiles = 0
+    public var copyingFile = ""
+    public var verifyingFile = ""
+    public var sequence: UInt64 = 0
 }
 
 // A file's identity is checked again before an existing file is changed.
