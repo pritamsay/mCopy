@@ -1,0 +1,8 @@
+.build/
+dist/
+Backups/
+.DS_Store
+.swiftpm/
+.release/
+.venv/
+__pycache__/

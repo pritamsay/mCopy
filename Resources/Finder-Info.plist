@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleDisplayName</key><string>myCopy</string>
+    <key>CFBundleExecutable</key><string>MyCopyFinder</string>
+    <key>CFBundleIdentifier</key><string>local.pritam.mycopy.finder</string>
+    <key>CFBundleName</key><string>myCopy Finder</string>
+    <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>CFBundleShortVersionString</key><string>3.1.0</string>
+    <key>CFBundleVersion</key><string>11</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>NSExtension</key><dict>
+        <key>NSExtensionPointIdentifier</key><string>com.apple.FinderSync</string>
+        <key>NSExtensionPrincipalClass</key><string>MyCopyFinderSync</string>
+    </dict>
+</dict></plist>

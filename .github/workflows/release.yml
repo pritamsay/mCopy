@@ -1,0 +1,27 @@
+name: Publish release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag matching the app version, for example v3.1.0
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: zsh scripts/test.sh
+      - run: zsh scripts/build.sh
+      - run: zsh scripts/package.sh
+      - name: Publish checked release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION="$(plutil -extract CFBundleShortVersionString raw -o - Resources/App-Info.plist)"
+          test "$RELEASE_TAG" = "v$VERSION"
+          gh release create "$RELEASE_TAG" .release/mCopy-macos-universal.zip .release/SHA256SUMS --target "$GITHUB_SHA" --title "mCopy $VERSION" --notes-file RELEASE_NOTES.md

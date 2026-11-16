@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleDisplayName</key><string>myCopy</string>
+    <key>CFBundleExecutable</key><string>myCopy</string>
+    <key>CFBundleIdentifier</key><string>local.pritam.mycopy</string>
+    <key>CFBundleName</key><string>myCopy</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>3.1.0</string>
+    <key>CFBundleVersion</key><string>11</string>
+    <key>MCopyManagementVersion</key><integer>1</integer>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>myCopy Finder requests</string>
+        <key>CFBundleURLSchemes</key><array><string>mycopy</string></array>
+    </dict></array>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSDesktopFolderUsageDescription</key><string>myCopy transfers files you copy and paste in Finder.</string>
+    <key>NSDocumentsFolderUsageDescription</key><string>myCopy transfers files you copy and paste in Finder.</string>
+    <key>NSDownloadsFolderUsageDescription</key><string>myCopy transfers files you copy and paste in Finder.</string>
+    <key>NSNetworkVolumesUsageDescription</key><string>myCopy transfers files to and from your NAS and resumes after disconnects.</string>
+    <key>NSRemovableVolumesUsageDescription</key><string>myCopy transfers selected files to and from external disks.</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+</dict></plist>
