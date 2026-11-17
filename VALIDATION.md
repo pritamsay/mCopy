@@ -6,6 +6,8 @@
 
 The packaged UI self-test deliberately hides and minimizes its own app/window after launch, then starts a generated transfer. It checks visibility, non-minimized state, non-hidden app state, the active Space and exact 420×230 content size before any computer-control inspection activates the app. This check and the verified move passed. The compact layout was inspected with long paths and a live 3.8 MB/s speed display. The isolated HTTP installation/update/removal test also passed with the actual installation and data unchanged.
 
+The GitHub candidate was then installed on the original Mac with an empty transfer queue. Clicking the mCopy parent on both a generated file and destination folder kept its submenu open. Copy → Paste to Folder copied only the generated fixture and retained its original. Before opening the app through computer control, its read-only status reported `active: true` and `hidden: false`, confirming automatic foreground activation. The installed compact completion window was inspected afterward. No existing user/NAS files were changed by this check.
+
 ## 3.3.0 automatic status and network approval
 
 60 tests passed before publication, including Pause/Resume during copying, Pause/Resume during verification with move originals retained, and safe cancellation/recovery while suspended. Existing conflict tests still cover Replace, Rename, Skip and same-folder renaming.
