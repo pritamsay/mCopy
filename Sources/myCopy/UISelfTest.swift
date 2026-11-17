@@ -8,6 +8,8 @@ final class UISelfTest {
     let lock = NSLock()
     var latest: MoverCore.Progress?
     var timer: Timer?
+    var startedMinimizeCheck = false
+    var passedMinimizeCheck = false
 
     static func run() throws {
         let files = FileManager.default
@@ -25,7 +27,18 @@ final class UISelfTest {
         app.setActivationPolicy(.accessory)
         let request = TransferRequest(sources: [first, second], destination: destination, move: true, token: UUID().uuidString)
         test.window.begin(request, queued: 0)
+        test.window.internetPriority.isHidden = false
         let engine = TransferEngine(journal: root.appendingPathComponent("state/job.json"))
+        let minimizeConfirmed = DispatchSemaphore(value: 0)
+        var waitedForMinimize = false
+        engine.onVerificationStarted = { _ in
+            if !waitedForMinimize {
+                waitedForMinimize = true
+                guard minimizeConfirmed.wait(timeout: .now() + 50) == .success else {
+                    throw TransferError.unsafe("Minimize the generated test window to exercise its Dock progress.")
+                }
+            }
+        }
         test.window.cancelButton.isEnabled = false
         test.window.pauseButton.isEnabled = true
         test.window.onPause = {
@@ -34,22 +47,24 @@ final class UISelfTest {
             else { engine.resume() }
             test.window.setPaused(paused)
         }
-        // Exercise the state that ordinary foreground UI inspection would
-        // accidentally hide: startup/minimized windows in a background app.
+        // Check hidden startup without a control tool activating the app first.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            test.window.window?.miniaturize(nil)
             app.hide(nil)
             test.window.begin(request, queued: 0)
             test.window.pauseButton.isEnabled = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if let window = test.window.window {
+                    print("UI state: visible=\(window.isVisible), mini=\(window.isMiniaturized), hidden=\(app.isHidden), space=\(window.isOnActiveSpace), level=\(window.level.rawValue), size=\(window.contentView?.bounds.size ?? .zero)")
+                }
                 guard let window = test.window.window, window.isVisible,
                       !window.isMiniaturized, !app.isHidden, window.isOnActiveSpace,
+                      window.level == .floating,
                       let content = window.contentView, abs(content.bounds.width - 420) < 1,
                       abs(content.bounds.height - 230) < 1 else {
-                    fputs("FAIL: transfer status did not restore from hidden/minimized state.\n", stderr)
+                    fputs("FAIL: transfer status did not appear above other windows.\n", stderr)
                     exit(1)
                 }
-                print("PASS: 420×230 transfer status restored from hidden/minimized state on the active Space.")
+                print("PASS: 420×230 status restored from hidden startup at floating window level.")
             }
         }
         engine.onProgress = { progress in
@@ -62,6 +77,26 @@ final class UISelfTest {
             let progress = test.latest
             test.lock.unlock()
             if let progress { test.window.update(progress) }
+            // The operator clicks the native minimize button. Check that the
+            // next queued request keeps it down, with live progress in the Dock.
+            if test.window.window?.isMiniaturized == true, !test.startedMinimizeCheck, let progress, progress.fraction > 0 {
+                test.startedMinimizeCheck = true
+                test.window.begin(request, queued: 0)
+                test.window.pauseButton.isEnabled = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    guard test.window.window?.isMiniaturized == true,
+                          NSApp.activationPolicy() == .regular,
+                          NSApp.dockTile.contentView === test.window.dock.view,
+                          test.window.dock.view.fraction > 0 else {
+                        fputs("FAIL: minimized status or live Dock progress was lost.\n", stderr)
+                        exit(1)
+                    }
+                    test.passedMinimizeCheck = true
+                    minimizeConfirmed.signal()
+                    print("PASS: minimized window stays minimized while the Dock progress updates.")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { test.window.show() }
+            }
         }
         DispatchQueue.global(qos: .utility).async {
             do {
@@ -73,6 +108,10 @@ final class UISelfTest {
                     throw TransferError.unsafe("The UI test move did not verify.")
                 }
                 DispatchQueue.main.async {
+                    guard test.passedMinimizeCheck else {
+                        fputs("FAIL: the active-window minimize check was not exercised.\n", stderr)
+                        exit(1)
+                    }
                     print("PASS: packaged status window and verified move; generated files only.")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                         test.timer?.invalidate()

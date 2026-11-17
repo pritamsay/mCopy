@@ -15,10 +15,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var latestProgress: MoverCore.Progress?
     var latestNotice: String?
     var progressTimer: Timer?
+    let internetMonitor = InternetPriorityMonitor()
+    var networkJob = false
+    var internetPriorityEnabled: Bool { UserDefaults.standard.object(forKey: "internetPriority") as? Bool ?? true }
     lazy var transferWindow: TransferWindow = {
         let window = TransferWindow()
         window.onCancel = { [weak self] in self?.cancelTransfer() }
         window.onPause = { [weak self] in self?.togglePause() }
+        window.onInternetPriority = { [weak self] enabled in
+            UserDefaults.standard.set(enabled, forKey: "internetPriority")
+            guard let self else { return }
+            if enabled, self.networkJob, let engine = self.engine { self.internetMonitor.start(for: engine) }
+            else { self.internetMonitor.stop() }
+        }
         return window
     }()
 
@@ -28,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: ["internetPriority": true])
         registerLoginItem()
         if CommandLine.arguments.contains("--setup-network-access") {
             DispatchQueue.global(qos: .utility).async { NetworkVolumeAccess.requestMountedVolumes() }
@@ -40,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationWillTerminate(_ notification: Notification) { internetMonitor.stop() }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard running else { return .terminateNow }
@@ -128,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 DispatchQueue.main.async { [self] in
+                    internetMonitor.stop()
                     refreshProgress()
                     progressTimer?.invalidate()
                     progressTimer = nil
@@ -187,7 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let engine = makeEngine(request)
             do {
                 if request.cancelled {
-                    if FileManager.default.fileExists(atPath: engine.journal.path) { try engine.cancelSavedTransfer() }
+                    if FileManager.default.fileExists(atPath: engine.journal.path) {
+                        configureInternetPriority(engine, job: try engine.load())
+                        try engine.cancelSavedTransfer()
+                    }
                 } else {
                     let job: Job
                     if FileManager.default.fileExists(atPath: engine.journal.path) {
@@ -197,6 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     } else {
                         job = try prepare(engine, request: request)
                     }
+                    configureInternetPriority(engine, job: job)
                     try engine.run(job)
                 }
                 try store.remove(request)
@@ -316,6 +332,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         progressLock.unlock()
         if let progress { transferWindow.update(progress) }
         if let message { transferWindow.waiting(message) }
+        if message == nil {
+            transferWindow.showInternetPriority(internetMonitor.currentStatus(), enabled: internetPriorityEnabled)
+        }
+    }
+
+    func configureInternetPriority(_ engine: TransferEngine, job: Job) {
+        DispatchQueue.main.sync {
+            networkJob = engine.usesNetwork(job)
+            let enabled = internetPriorityEnabled
+            transferWindow.internetPriority.isHidden = !networkJob
+            transferWindow.internetPriority.state = enabled ? .on : .off
+            if networkJob && enabled { internetMonitor.start(for: engine) }
+            else { internetMonitor.stop() }
+        }
     }
 
     func cancelTransfer() {

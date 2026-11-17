@@ -166,8 +166,8 @@ extension TransferEngine {
         while copied < partial {
             try beforeIO()
             let count = Int(min(Int64(chunkSize), partial - copied))
-            let original = try readExactly(input, count: count)
-            let saved = try readExactly(output, count: count)
+            let original = try readExactly(input, count: count, network: entry.source.network)
+            let saved = try readExactly(output, count: count, network: job.destination.network)
             guard original == saved, original.count == count else {
                 throw TransferError.unsafe("Saved partial copy does not match the source. Original and partial copy retained for inspection.")
             }
@@ -180,12 +180,13 @@ extension TransferEngine {
         }
         while copied < entry.size {
             try beforeIO()
-            let count = Int(min(Int64(chunkSize), entry.size - copied))
-            let data = try readExactly(input, count: count)
+            let count = Int(min(Int64(ioChunkSize(network: entry.source.network || job.destination.network)), entry.size - copied))
+            let data = try readExactly(input, count: count, network: entry.source.network)
             guard data.count == count else {
                 throw TransferError.unsafe("Source became shorter during the transfer. Original retained.")
             }
             try beforeIO()
+            try paceNetwork(bytes: data.count, network: job.destination.network)
             try output.write(contentsOf: data)
             progress.recordWrite(data.count)
             hasher.update(data: data)
@@ -218,18 +219,19 @@ extension TransferEngine {
         report(source.lastPathComponent, index: index, job: job, portion: 0.8, lane: "copy")
     }
 
-    func readExactly(_ handle: FileHandle, count: Int) throws -> Data {
+    func readExactly(_ handle: FileHandle, count: Int, network: Bool = false) throws -> Data {
         var result = Data()
         while result.count < count {
             try beforeIO()
-            let chunk = try handle.read(upToCount: count - result.count) ?? Data()
+            let chunk = try handle.read(upToCount: min(count - result.count, ioChunkSize(network: network))) ?? Data()
             if chunk.isEmpty { break }
+            try paceNetwork(bytes: chunk.count, network: network)
             result.append(chunk)
         }
         return result
     }
 
-    func hash(_ url: URL, limitMB: Double, onRead: ((Int64) -> Void)? = nil) throws -> String {
+    func hash(_ url: URL, limitMB: Double, network: Bool = false, onRead: ((Int64) -> Void)? = nil) throws -> String {
         let input = try FileAccess.openFile(url, flags: O_RDONLY)
         defer { try? input.close() }
         var hasher = SHA256()
@@ -237,8 +239,9 @@ extension TransferEngine {
         let started = Date()
         while true {
             try beforeIO()
-            let data = try input.read(upToCount: chunkSize) ?? Data()
+            let data = try input.read(upToCount: ioChunkSize(network: network)) ?? Data()
             if data.isEmpty { break }
+            try paceNetwork(bytes: data.count, network: network)
             hasher.update(data: data)
             read += Int64(data.count)
             onRead?(read)

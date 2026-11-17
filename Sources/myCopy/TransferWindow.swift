@@ -1,9 +1,22 @@
 import AppKit
 import MoverCore
 
+final class TransferStatusWindow: NSWindow {
+    override func miniaturize(_ sender: Any?) {
+        // Floating utility windows are not normally managed by the Dock.
+        // Lower the level only when the user asks to minimize.
+        level = .normal
+        collectionBehavior = [.managed]
+        if CommandLine.arguments.contains("--ui-self-test") {
+            print("Minimize request: allowed=\(isMiniaturizable), style=\(styleMask.rawValue), button=\(standardWindowButton(.miniaturizeButton)?.isEnabled ?? false), policy=\(NSApp.activationPolicy().rawValue), active=\(NSApp.isActive)")
+        }
+        super.miniaturize(sender)
+    }
+}
+
 // This window appears automatically for a transfer.
 // Closing it hides the window; it never interrupts the transfer.
-final class TransferWindow: NSWindowController {
+final class TransferWindow: NSWindowController, NSWindowDelegate {
     let heading = NSTextField(labelWithString: "No active transfers")
     let destination = NSTextField(labelWithString: "")
     let progressBar = NSProgressIndicator()
@@ -15,22 +28,32 @@ final class TransferWindow: NSWindowController {
     let status = NSTextField(wrappingLabelWithString: "Copy or cut files using mCopy in Finder.")
     let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     let pauseButton = NSButton(title: "Pause", target: nil, action: nil)
+    let internetPriority = NSButton(checkboxWithTitle: "Internet priority", target: nil, action: nil)
     var paused = false
     var operationTitle = "Copying files"
     var onCancel: (() -> Void)?
     var onPause: (() -> Void)?
+    var onInternetPriority: ((Bool) -> Void)?
     var speedMeter = TransferSpeed()
     var lastWrittenBytes: Int64 = 0
+    let dock = TransferDock()
+    var transferActive = false
+    var lastFraction = 0.0
+    var presentationID = 0
+    var userMinimized = false
+    var copyPhaseFinished = false
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 230),
+        let window = TransferStatusWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 230),
             styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "mCopy — Transfer Status"
         window.isReleasedWhenClosed = false
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .managed, .fullScreenAuxiliary]
+        window.hidesOnDeactivate = false
         window.contentMinSize = NSSize(width: 420, height: 230)
         window.contentMaxSize = NSSize(width: 420, height: 230)
         super.init(window: window)
+        window.delegate = self
         heading.font = .systemFont(ofSize: 14, weight: .semibold)
         for label in [destination, counts, copying, verifying] {
             label.font = .systemFont(ofSize: 11)
@@ -65,11 +88,17 @@ final class TransferWindow: NSWindowController {
         pauseButton.target = self
         pauseButton.action = #selector(pauseClicked)
         pauseButton.isEnabled = false
+        internetPriority.target = self
+        internetPriority.action = #selector(internetPriorityClicked)
+        internetPriority.font = .systemFont(ofSize: 11)
+        internetPriority.state = .on
+        internetPriority.isHidden = true
+        internetPriority.toolTip = "NAS traffic yields dynamically to other Wi-Fi traffic. Idle internet leaves NAS unrestricted."
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked)
         cancelButton.isEnabled = false
         let spacer = NSView()
-        let buttons = NSStackView(views: [spacer, pauseButton, cancelButton])
+        let buttons = NSStackView(views: [internetPriority, spacer, pauseButton, cancelButton])
         buttons.spacing = 10
         let stack = NSStackView(views: [headingRow, destination, progressBar, statistics, copying, verifying, status, buttons])
         stack.orientation = .vertical
@@ -94,6 +123,11 @@ final class TransferWindow: NSWindowController {
     required init?(coder: NSCoder) { fatalError("Not used") }
 
     func begin(_ request: TransferRequest, queued: Int) {
+        transferActive = true
+        lastFraction = 0
+        copyPhaseFinished = false
+        if !userMinimized && window?.isMiniaturized != true { window?.level = .floating }
+        dock.start()
         operationTitle = request.move ? "Moving files" : "Copying files"
         heading.stringValue = operationTitle
         paused = false
@@ -114,10 +148,14 @@ final class TransferWindow: NSWindowController {
         progressBar.doubleValue = 0
         cancelButton.isEnabled = false
         status.stringValue = "Original files are kept until their destination copies verify."
-        show()
+        // Respect a user's minimize choice across queued transfer requests.
+        if !userMinimized && window?.isMiniaturized != true { show() }
     }
 
     func update(_ progress: MoverCore.Progress) {
+        lastFraction = progress.fraction
+        copyPhaseFinished = progress.copyingFinished
+        dock.update(fraction: progress.fraction, paused: paused)
         progressBar.stopAnimation(nil)
         progressBar.isIndeterminate = false
         progressBar.doubleValue = progress.fraction * 100
@@ -129,11 +167,14 @@ final class TransferWindow: NSWindowController {
         lastWrittenBytes = progress.writtenBytes
         let rate = speedMeter.sample(bytes: progress.writtenBytes, at: ProcessInfo.processInfo.systemUptime)
         speed.stringValue = paused ? "Paused" : ByteCountFormatter.string(fromByteCount: Int64(rate), countStyle: .file) + "/s"
-        copying.stringValue = "Copy: " + (progress.copyingFile.isEmpty ? "Waiting / finished" : progress.copyingFile)
+        copying.stringValue = "Copy: " + (progress.copyingFinished ? "Finished" :
+            (progress.copyingFile.isEmpty ? "Preparing / waiting" : progress.copyingFile))
         verifying.stringValue = "Verification: " + (progress.verifyingFile.isEmpty ? "Waiting / finished" : progress.verifyingFile)
         copying.toolTip = copying.stringValue
         verifying.toolTip = verifying.stringValue
-        status.stringValue = progress.fraction == 1 ? progress.message : "Copying and checksum verification run together."
+        if progress.fraction == 1 { status.stringValue = progress.message }
+        else if progress.copyingFinished { status.stringValue = "Copy phase finished. Verifying remaining files…" }
+        else { status.stringValue = "Copying and checksum verification run together." }
         if paused { showPausedMessage() }
         if progress.fraction == 1 { finish(progress.message) }
     }
@@ -151,6 +192,7 @@ final class TransferWindow: NSWindowController {
         speedMeter.reset()
         _ = speedMeter.sample(bytes: lastWrittenBytes, at: ProcessInfo.processInfo.systemUptime)
         speed.stringValue = value ? "Paused" : "0 B/s"
+        dock.update(fraction: lastFraction, paused: value)
         if value { showPausedMessage() }
         else { status.stringValue = "Resuming copying and verification…" }
     }
@@ -160,6 +202,8 @@ final class TransferWindow: NSWindowController {
     }
 
     func finish(_ message: String) {
+        transferActive = false
+        window?.level = .normal
         heading.stringValue = message.hasPrefix("Transfer complete") ? "Transfer complete" : "Transfer stopped"
         status.stringValue = message
         cancelButton.isEnabled = false
@@ -169,18 +213,68 @@ final class TransferWindow: NSWindowController {
         speed.stringValue = "—"
         progressBar.stopAnimation(nil)
         progressBar.isIndeterminate = false
+        dock.update(fraction: lastFraction, paused: false)
+        if window?.isVisible != true && window?.isMiniaturized != true { dock.hide() }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        presentationID += 1
+        if !transferActive { dock.hide() }
+    }
+
+    func windowWillMiniaturize(_ notification: Notification) {
+        userMinimized = true
+        presentationID += 1
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        userMinimized = false
+        window?.collectionBehavior = [.canJoinAllSpaces, .managed, .fullScreenAuxiliary]
+        window?.level = transferActive ? .floating : .normal
     }
 
     func show() {
         guard let window else { return }
+        userMinimized = false
+        presentationID += 1
+        let requestedPresentation = presentationID
+        present(window)
+        // Dock activation-policy changes and app hiding are applied by macOS
+        // asynchronously. Retry after that transition, unless the user closed
+        // or minimized the window in the meantime.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, self.presentationID == requestedPresentation,
+                  !self.userMinimized, !window.isMiniaturized else { return }
+            self.present(window)
+        }
+    }
+
+    func present(_ window: NSWindow) {
         // Startup runs in the background. Ordering an inactive app's window
         // alone can leave it behind Finder, minimized, or on a different Space.
         NSApp.unhide(nil)
         if window.isMiniaturized { window.deminiaturize(nil) }
+        window.collectionBehavior = [.canJoinAllSpaces, .managed, .fullScreenAuxiliary]
+        window.level = transferActive ? .floating : .normal
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
     }
     @objc func cancelClicked() { onCancel?() }
     @objc func pauseClicked() { onPause?() }
+    @objc func internetPriorityClicked() { onInternetPriority?(internetPriority.state == .on) }
+
+    func showInternetPriority(_ status: InternetPriorityStatus, enabled: Bool) {
+        guard !internetPriority.isHidden, enabled, transferActive, !paused else { return }
+        if !status.available {
+            internetPriority.toolTip = "Passive Wi-Fi monitoring is starting or unavailable. NAS is currently unrestricted."
+        } else if status.active && status.limitMB > 0 {
+            let budget = ByteCountFormatter.string(fromByteCount: Int64(status.limitMB * 1_000_000), countStyle: .file)
+            self.status.stringValue = copyPhaseFinished ? "Copy done; verifying. Internet priority (~\(budget)/s)." :
+                "Internet active · NAS yielding dynamically (~\(budget)/s)."
+            internetPriority.toolTip = self.status.stringValue
+        } else {
+            internetPriority.toolTip = "Internet idle or no shared Wi-Fi NAS connection. NAS transfer is unrestricted."
+        }
+    }
 }

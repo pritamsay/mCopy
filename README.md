@@ -34,13 +34,21 @@ Volumes containing unfinished transfers must be available for safe recovery. If 
 
 Copy retains the original. Cut moves it and deletes the original only after the destination verifies. Pasting into the same folder asks for a new name. Other duplicate names offer Replace, Rename, and Skip. Folder Replace merges folders and keeps unrelated destination files.
 
-A transfer status window appears automatically when copying or moving. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. **Pause / Resume** suspends and resumes both workers without cancelling the transfer. **Cancel Transfer** safely cancels the active request after confirmation, including while paused. A disk operation already in flight may finish before pausing. Pause lasts for the current app session; saved requests resume after an app restart.
+A transfer status window appears automatically when copying or moving and stays above other windows until completion or minimizing. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. **Pause / Resume** suspends and resumes both workers without cancelling the transfer. **Cancel Transfer** safely cancels the active request after confirmation, including while paused. A disk operation already in flight may finish before pausing. Pause lasts for the current app session; saved requests resume after an app restart.
 
-Starting a transfer unhides and activates mCopy, restores a minimized status window, and brings it onto the active desktop. The compact 420×230 window shows live write speed beside the byte/file counts. Speed uses a two-second average of newly written bytes, excluding skipped files and checks of old partial data. The app remains in the background while idle.
+Starting a transfer unhides and activates mCopy on the active desktop. The compact 420×230 window shows live write speed beside the byte/file counts. Speed uses a two-second average of newly written bytes, excluding skipped files and checks of old partial data. Minimizing keeps the window down, including across queued requests. A live Dock progress bar and percentage remain available; click the Dock icon to restore the window. The completed Dock status stays available until its window is closed.
 
 Finder's mCopy submenu contains only Copy, Cut, Paste, and Paste to Folder when applicable. It has no transfer-status command. Closing the status window keeps work running in the background; opening the installed app again shows its current status.
 
-The app has no Dock icon or menu bar item. It starts at login and resumes saved requests.
+The app shows a Dock tile while transfer status is open, and returns to background-only operation when its completed status window is closed. It has no menu bar item. It starts at login and resumes saved requests.
+
+## Dynamic internet priority
+
+NAS transfers enable **Internet priority** by default. When other Wi-Fi traffic is idle, mCopy imposes no NAS speed limit. When that traffic becomes active, mCopy learns from observed traffic and reduces its NAS budget dynamically, then removes the limit after a short quiet period. Copying, checksum reads and NAS publication share that budget. The status window shows when NAS traffic is yielding; its checkbox can disable the feature and remembers your choice.
+
+Monitoring uses macOS's built-in `nettop` with passive Wi-Fi byte counters, including TCP and UDP. It does not run speed tests, capture packet contents or save endpoints/process histories. SMB, AFP and NFS ports are treated as storage traffic; other Wi-Fi traffic receives priority, including background apps and non-storage LAN traffic. Wired/local transfers receive no Wi-Fi limit. If monitoring is unavailable, transfers remain unrestricted.
+
+This is best-effort headroom on this Mac, not router-wide QoS or a guarantee of full internet speed. Other devices, router queues and the internet connection itself remain outside mCopy's control.
 
 ## Network-volume permission
 
@@ -52,7 +60,9 @@ mCopy shares its own file selection through a named pasteboard and reads only ge
 
 ## Reliability
 
-- One copy worker and one verifier overlap work, with at most two files in the pipeline.
+- One copy worker and one independent verifier overlap work. Slow verification no longer blocks copying the remaining batch; pending verification indices are queued, without buffering file contents in memory.
+- The status distinguishes the copy phase finishing from the remaining verification finishing. The whole task completes only after all checks pass.
+- Unverified partials and move originals remain on disk until verification/publication completes, so a large verification backlog needs destination free space.
 - SHA-256 is computed while copying and checked against destination bytes before move cleanup.
 - Partial copies are compared against the source before resuming.
 - Transient NAS errors back off and require two successful availability probes before retrying.
@@ -91,4 +101,4 @@ MCOPY_NAS_PATH=/Volumes/YourShare zsh scripts/test-nas.sh
 
 The real-share test covers copy, move, replacement, and rollback of an interrupted replacement. It never disconnects the share. See [VALIDATION.md](VALIDATION.md) for test coverage and limits.
 
-Developer management commands are available through the app executable: `--status`, `--self-test`, `--stop`, `--register-login`, and `--prepare-uninstall`. GitHub Actions validates builds/tests; the manual Publish release workflow creates subsequent checked releases.
+Developer management commands are available through the app executable: `--status`, `--self-test`, `--network-self-test`, `--stop`, `--register-login`, and `--prepare-uninstall`. The passive network self-test checks monitoring availability without transferring files. The interactive `--ui-self-test` uses generated files and requires clicking its native Minimize button to check minimized Dock progress. GitHub Actions validates builds/tests; the manual Publish release workflow creates subsequent checked releases.

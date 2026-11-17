@@ -6,8 +6,8 @@
     <key>CFBundleIdentifier</key><string>local.pritam.mycopy</string>
     <key>CFBundleName</key><string>myCopy</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>3.3.1</string>
-    <key>CFBundleVersion</key><string>16</string>
+    <key>CFBundleShortVersionString</key><string>3.4.0</string>
+    <key>CFBundleVersion</key><string>17</string>
     <key>MCopyManagementVersion</key><integer>1</integer>
     <key>CFBundleURLTypes</key><array><dict>
         <key>CFBundleURLName</key><string>myCopy Finder requests</string>

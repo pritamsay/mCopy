@@ -39,12 +39,37 @@ public final class TransferEngine {
     var activeJob: Job?
     let networkLock = NSLock()
     let progress = TransferProgress()
+    let networkBandwidth = NetworkBandwidth()
     var networkQuietUntil = Date.distantPast
     var allChoice: Choice?
     let chunkSize = 1_048_576
 
     public init(journal: URL) {
         self.journal = journal
+    }
+
+    public var networkLimitMB: Double {
+        get { networkBandwidth.limitMB }
+        set { networkBandwidth.setLimitMB(newValue) }
+    }
+
+    public func usesNetwork(_ job: Job) -> Bool {
+        job.destination.network || job.entries.contains { $0.source.network }
+    }
+
+    func ioChunkSize(network: Bool) -> Int {
+        network && networkLimitMB > 0 ? 65_536 : chunkSize
+    }
+
+    func paceNetwork(bytes: Int, network: Bool) throws {
+        guard network else { return }
+        var remaining = bytes
+        while remaining > 0 {
+            try checkStop()
+            let allowance = networkBandwidth.take(remaining, at: ProcessInfo.processInfo.systemUptime)
+            remaining -= allowance.bytes
+            if allowance.wait > 0 { Thread.sleep(forTimeInterval: min(0.05, allowance.wait)) }
+        }
     }
 
     public func pause() {
@@ -216,7 +241,7 @@ public final class TransferEngine {
                 totalBytes: job.entries.reduce(0) { $0 + $1.size },
                 completedFiles: job.entries.filter { !$0.directory }.count,
                 totalFiles: job.entries.filter { !$0.directory }.count, sequence: UInt64.max,
-                writtenBytes: progress.writtenByteCount))
+                writtenBytes: progress.writtenByteCount, copyingFinished: true))
         }
     }
 

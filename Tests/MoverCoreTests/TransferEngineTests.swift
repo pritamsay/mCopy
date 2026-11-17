@@ -461,6 +461,83 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertFalse(files.fileExists(atPath: journal.path))
     }
 
+    func testSlowFirstVerificationDoesNotBlockCopyingTheWholeBatch() throws {
+        var originals: [URL] = []
+        for number in 0..<6 { originals.append(try write("batch-\(number).txt", text: "payload \(number)")) }
+        let engine = TransferEngine(journal: journal)
+        let job = try prepare(engine, originals, move: true)
+        let first = job.entries[0].source.original
+        let second = job.entries[1].source.original
+        let verifying = DispatchSemaphore(value: 0)
+        let allCopied = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var sawCopyCompletion = false
+        engine.onCopyStarted = { path in
+            if path == second {
+                guard verifying.wait(timeout: .now() + 5) == .success else {
+                    throw TransferError.unsafe("Verification did not start while copying continued.")
+                }
+            }
+        }
+        engine.onVerificationStarted = { path in
+            if path == first {
+                verifying.signal()
+                guard allCopied.wait(timeout: .now() + 5) == .success else {
+                    throw TransferError.unsafe("Slow verification blocked the rest of the copy batch.")
+                }
+            }
+        }
+        engine.onProgress = { update in
+            lock.lock()
+            let firstCopyCompletion = update.copyingFinished && !sawCopyCompletion
+            if firstCopyCompletion { sawCopyCompletion = true }
+            lock.unlock()
+            if firstCopyCompletion {
+                XCTAssertLessThan(update.fraction, 1)
+                XCTAssertEqual(update.completedFiles, 0)
+                XCTAssertEqual(update.copiedBytes, update.totalBytes)
+                for original in originals { XCTAssertTrue(self.files.fileExists(atPath: original.path)) }
+                allCopied.signal()
+            }
+        }
+        try engine.run(job)
+        XCTAssertTrue(sawCopyCompletion)
+        for number in 0..<6 {
+            XCTAssertEqual(try contents(target("batch-\(number).txt")), "payload \(number)")
+            XCTAssertFalse(files.fileExists(atPath: originals[number].path))
+        }
+    }
+
+    func testCancellationWithAWholeBatchWaitingForVerificationKeepsOriginals() throws {
+        var originals: [URL] = []
+        for number in 0..<5 { originals.append(try write("pending-\(number).txt", text: "keep \(number)")) }
+        let engine = TransferEngine(journal: journal)
+        let job = try prepare(engine, originals, move: true)
+        let verifying = DispatchSemaphore(value: 0)
+        let allCopied = DispatchSemaphore(value: 0)
+        engine.onCopyStarted = { path in
+            if path == job.entries[1].source.original { XCTAssertEqual(verifying.wait(timeout: .now() + 5), .success) }
+        }
+        engine.onVerificationStarted = { path in
+            if path == job.entries[0].source.original {
+                verifying.signal()
+                guard allCopied.wait(timeout: .now() + 5) == .success else {
+                    throw TransferError.unsafe("Copy batch was blocked by verification.")
+                }
+            }
+        }
+        engine.onProgress = { update in
+            if update.copyingFinished {
+                engine.pause()
+                allCopied.signal()
+            }
+        }
+        XCTAssertThrowsError(try engine.run(job))
+        try TransferEngine(journal: journal).cancelSavedTransfer()
+        for number in 0..<5 { XCTAssertEqual(try contents(originals[number]), "keep \(number)") }
+        XCTAssertTrue(try hiddenFiles().isEmpty)
+    }
+
     func testProgressTracksBytesAndVerificationBeforeMoveCompletion() throws {
         let first = try largeFile()
         let second = try write("tiny.txt", text: "small")

@@ -1,5 +1,15 @@
 # Validation
 
+## 3.4.0 independent verification, Dock and internet priority
+
+74 tests passed before publication. A six-file regression holds the first verifier until the entire copy phase has finished, proving that verification no longer blocks the rest of the batch. A second test cancels with a full verification backlog and confirms that unverified originals survive recovery.
+
+Internet-priority tests cover passive CSV parsing without double-counting process summaries, initial cumulative-counter rejection, IPv6, reordered/malformed rows, idle unrestricted operation, lower NAS budgets as other traffic increases, observed-capacity-dependent budgets, no Wi-Fi budget for wired/local transfers, shared copy/verification tokens, rate changes and prompt cancellation of a bandwidth wait. The packaged passive monitoring self-test parsed live Wi-Fi counters on the original Mac without a speed test or saved endpoints. Internet throughput under controlled competing load and router-wide QoS are not claimed.
+
+Both universal architecture slices and code signatures passed. The isolated HTTP installation/update/uninstall smoke test passed, including unchanged fingerprints for the actual installed app and user data. Generated-file copy, move, Replace and interrupted replacement recovery passed on the mounted SMB share; generated fixtures were removed.
+
+The packaged interactive UI test confirmed a 420×230 window automatically visible at floating level on the active Space after hidden startup, before computer control activated it. The compact layout, speed field, Internet priority checkbox and Pause/Cancel controls were inspected. Clicking the native Minimize button kept the status minimized across a simulated next request while the application's Dock content view and progress continued updating. The verified move then completed. Dock progress was checked through the app's live Dock view state; direct inspection of the Dock application is not claimed.
+
 ## 3.3.1 visibility and submenu follow-up
 
 64 tests passed before publication. The menu wrapper now uses AppKit's `setSubmenu(_:for:)`, which assigns `submenuAction:` instead of leaving the parent action nil. The regression test verifies that action and the linked submenu. Speed tests cover stalls, pause/reset and counter resets; real transfer tests confirm skipped files and old partial prefixes do not count as newly written bytes.

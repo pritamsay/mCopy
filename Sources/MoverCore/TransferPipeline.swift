@@ -38,15 +38,12 @@ extension TransferEngine {
     func runPipeline() throws {
         let verifier = DispatchQueue(label: "local.pritam.mycopy.verification", qos: .utility)
         let finished = DispatchGroup()
-        // A slot covers copying + queued verification + verification. Two slots
-        // allow the next file to copy while one file is checked, with bounded I/O.
-        let slots = DispatchSemaphore(value: 2)
+        // Verification has its own serial queue. A slow checksum must not hold
+        // a copy slot: copied entries are already recoverable in the journal.
         let count = snapshot().entries.count
+        var copyingFinished = true
         for index in 0..<count {
-            var acquired = false
             do {
-                while slots.wait(timeout: .now() + 0.1) != .success { try checkStop() }
-                acquired = true
                 try checkStop()
                 var job = snapshot()
                 try retryNetwork(job: job, index: index) { try process(index, job: &job) }
@@ -54,7 +51,7 @@ extension TransferEngine {
                 if state == "verifying" || state == "publishing" || state == "committed" {
                     finished.enter()
                     verifier.async { [self] in
-                        defer { slots.signal(); finished.leave() }
+                        defer { finished.leave() }
                         do {
                             try checkStop()
                             var latest = snapshot()
@@ -63,15 +60,14 @@ extension TransferEngine {
                             }
                         } catch { recordFailure(error) }
                     }
-                } else {
-                    slots.signal()
                 }
             } catch {
-                if acquired { slots.signal() }
+                copyingFinished = false
                 recordFailure(error)
                 break
             }
         }
+        if copyingFinished { onProgress(progress.finishCopying()) }
         // Keep the process/journal lock until every verifier has stopped safely.
         finished.wait()
         try checkStop()

@@ -102,14 +102,15 @@ extension TransferEngine {
         let started = Date()
         while copied < entry.size {
             try beforeIO()
-            let count = Int(min(Int64(chunkSize), (copied < partial ? partial : entry.size) - copied))
-            let data = try readExactly(input, count: count)
+            let count = Int(min(Int64(ioChunkSize(network: job.destination.network)), (copied < partial ? partial : entry.size) - copied))
+            let data = try readExactly(input, count: count, network: job.destination.network)
             guard data.count == count else { throw TransferError.unsafe("Temporary file became shorter during publication.") }
             if copied < partial {
-                guard try readExactly(output, count: count) == data else {
+                guard try readExactly(output, count: count, network: job.destination.network) == data else {
                     throw TransferError.unsafe("Published partial copy changed. Original retained.")
                 }
             } else {
+                try paceNetwork(bytes: data.count, network: job.destination.network)
                 try output.write(contentsOf: data)
                 progress.recordWrite(data.count)
                 try output.synchronize()
@@ -143,7 +144,7 @@ extension TransferEngine {
             throw TransferError.unsafe("The copied file changed. Original retained.")
         }
         if !readContents && expected.matches(before, onNetwork: network) { return before }
-        guard try hash(url, limitMB: limitMB, onRead: onRead) == digest else {
+        guard try hash(url, limitMB: limitMB, network: network, onRead: onRead) == digest else {
             throw TransferError.unsafe("Copied file contents failed verification. Original retained.")
         }
         let after = try FileAccess.stamp(url)
@@ -151,7 +152,7 @@ extension TransferEngine {
             throw TransferError.unsafe("The copied file changed during verification. Original retained.")
         }
         if before.matches(after, onNetwork: network) { return after }
-        guard network, try hash(url, limitMB: limitMB, onRead: onRead) == digest else {
+        guard network, try hash(url, limitMB: limitMB, network: network, onRead: onRead) == digest else {
             throw TransferError.unsafe("The copied file changed during verification. Original retained.")
         }
         let settled = try FileAccess.stamp(url)

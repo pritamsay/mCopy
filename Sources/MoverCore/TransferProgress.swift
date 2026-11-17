@@ -19,6 +19,7 @@ final class TransferProgress {
     var totalFiles = 0
     var sequence: UInt64 = 0
     var writtenBytes: Int64 = 0
+    var copyingFinished = false
 
     func recordWrite(_ count: Int) {
         lock.lock()
@@ -56,6 +57,7 @@ final class TransferProgress {
         totalFiles = directories.filter { !$0 }.count
         sequence = 0
         writtenBytes = 0
+        copyingFinished = false
     }
 
     func update(_ message: String, index: Int, portion: Double, lane: String = "") -> Progress {
@@ -73,10 +75,24 @@ final class TransferProgress {
         if lane == "verify" { verifyingFile = message; verifyIndex = index }
         if portion >= 0.8, copyIndex == index { copyingFile = ""; copyIndex = nil }
         if portion >= 1, verifyIndex == index { verifyingFile = ""; verifyIndex = nil }
-        // Give empty files/folders a small weight too, so a directory-only job
-        // has meaningful progress and 100% still means all entries are finished.
+        return makeProgress(message)
+    }
+
+    func finishCopying() -> Progress {
+        lock.lock()
+        defer { lock.unlock() }
+        copyingFinished = true
+        copyingFile = ""
+        copyIndex = nil
+        sequence += 1
+        return makeProgress("Copy phase finished. Verifying remaining files…")
+    }
+
+    // Called with the progress lock held.
+    func makeProgress(_ message: String) -> Progress {
         return Progress(message: message, fraction: min(0.999, totalWeight == 0 ? 0 : finishedWeight / totalWeight),
             copiedBytes: copiedBytes, totalBytes: totalBytes, completedFiles: completedFiles,
-            totalFiles: totalFiles, copyingFile: copyingFile, verifyingFile: verifyingFile, sequence: sequence, writtenBytes: writtenBytes)
+            totalFiles: totalFiles, copyingFile: copyingFile, verifyingFile: verifyingFile, sequence: sequence,
+            writtenBytes: writtenBytes, copyingFinished: copyingFinished)
     }
 }

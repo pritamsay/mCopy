@@ -40,6 +40,7 @@ public struct Progress {
     public var verifyingFile = ""
     public var sequence: UInt64 = 0
     public var writtenBytes: Int64 = 0
+    public var copyingFinished = false
 }
 
 // A file's identity is checked again before an existing file is changed.

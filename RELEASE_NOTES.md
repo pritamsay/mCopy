@@ -1,6 +1,11 @@
-# mCopy 3.3.1
+# mCopy 3.4.0
 
-- Bring transfer status to the foreground on the active desktop, including after background startup or minimizing the window.
+- Remove the two-file pipeline gate: a slow verifier no longer stops the copier from processing the rest of the batch.
+- Show when copying has finished and remaining checksum work is still running. Move originals are deleted only after their own verification succeeds.
+- Keep active status above other windows, with user-controlled minimizing. A live Dock progress bar and percentage remain visible while minimized.
+- Enable dynamic internet priority for NAS transfers: idle internet leaves NAS unrestricted; other Wi-Fi traffic reduces a shared copy/verification/publication budget. Passive counters replace fixed speed caps; the status checkbox can disable it.
+
+- Bring transfer status to the foreground on the active desktop after background startup. Respect the user's minimize choice across queued transfers.
 - Assign AppKit's native submenu-opening action to the mCopy parent menu item.
 - Use a compact 420×230 status window with live transfer speed, Pause/Resume and Cancel.
 - Measure speed from newly written bytes, including NAS publication writes; skipped files and saved-prefix checks do not inflate throughput.
@@ -14,4 +19,4 @@
 - Existing GitHub install/uninstall commands, universal binaries, automatic startup, NAS recovery, and checksum-before-delete move behavior are retained.
 - Idle and stopped status windows show a settled progress bar rather than a busy spinner.
 
-The app is ad-hoc signed, not Apple-notarized. macOS may request approval for running the app, Finder integration, login startup, or protected locations. Permissions may need approval again after signature-changing updates or a clean uninstall. Physical disconnect/power-loss tests and execution on Intel hardware are not claimed.
+Internet priority provides best-effort Wi-Fi headroom on this Mac; router-wide QoS or guaranteed internet throughput is not claimed. The app is ad-hoc signed, not Apple-notarized. macOS may request approval for running the app, Finder integration, login startup, or protected locations. Permissions may need approval again after signature-changing updates or a clean uninstall. Physical disconnect/power-loss tests and execution on Intel hardware are not claimed.
