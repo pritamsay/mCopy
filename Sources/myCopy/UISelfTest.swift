@@ -43,11 +43,13 @@ final class UISelfTest {
             test.window.pauseButton.isEnabled = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 guard let window = test.window.window, window.isVisible,
-                      !window.isMiniaturized, !app.isHidden, window.isOnActiveSpace else {
+                      !window.isMiniaturized, !app.isHidden, window.isOnActiveSpace,
+                      let content = window.contentView, abs(content.bounds.width - 420) < 1,
+                      abs(content.bounds.height - 230) < 1 else {
                     fputs("FAIL: transfer status did not restore from hidden/minimized state.\n", stderr)
                     exit(1)
                 }
-                print("PASS: transfer status restored from hidden/minimized state on the active Space.")
+                print("PASS: 420×230 transfer status restored from hidden/minimized state on the active Space.")
             }
         }
         engine.onProgress = { progress in

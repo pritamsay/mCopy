@@ -2,9 +2,9 @@
 
 ## 3.3.1 visibility and submenu follow-up
 
-61 tests passed before publication. The menu wrapper now uses AppKit's `setSubmenu(_:for:)`, which assigns `submenuAction:` instead of leaving the parent action nil. The regression test verifies that action and the linked submenu.
+64 tests passed before publication. The menu wrapper now uses AppKit's `setSubmenu(_:for:)`, which assigns `submenuAction:` instead of leaving the parent action nil. The regression test verifies that action and the linked submenu. Speed tests cover stalls, pause/reset and counter resets; real transfer tests confirm skipped files and old partial prefixes do not count as newly written bytes.
 
-The packaged UI self-test deliberately hides and minimizes its own app/window after launch, then starts a generated transfer. It checks visibility, non-minimized state, non-hidden app state and the active Space before any computer-control inspection activates the app. This check and the verified move passed. The isolated HTTP installation/update/removal test also passed with the actual installation and data unchanged.
+The packaged UI self-test deliberately hides and minimizes its own app/window after launch, then starts a generated transfer. It checks visibility, non-minimized state, non-hidden app state, the active Space and exact 420×230 content size before any computer-control inspection activates the app. This check and the verified move passed. The compact layout was inspected with long paths and a live 3.8 MB/s speed display. The isolated HTTP installation/update/removal test also passed with the actual installation and data unchanged.
 
 ## 3.3.0 automatic status and network approval
 

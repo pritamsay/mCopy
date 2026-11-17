@@ -215,7 +215,8 @@ public final class TransferEngine {
                 copiedBytes: job.entries.reduce(0) { $0 + $1.size },
                 totalBytes: job.entries.reduce(0) { $0 + $1.size },
                 completedFiles: job.entries.filter { !$0.directory }.count,
-                totalFiles: job.entries.filter { !$0.directory }.count, sequence: UInt64.max))
+                totalFiles: job.entries.filter { !$0.directory }.count, sequence: UInt64.max,
+                writtenBytes: progress.writtenByteCount))
         }
     }
 

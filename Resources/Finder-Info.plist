@@ -7,7 +7,7 @@
     <key>CFBundleName</key><string>myCopy Finder</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
     <key>CFBundleShortVersionString</key><string>3.3.1</string>
-    <key>CFBundleVersion</key><string>15</string>
+    <key>CFBundleVersion</key><string>16</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSExtension</key><dict>
         <key>NSExtensionPointIdentifier</key><string>com.apple.FinderSync</string>

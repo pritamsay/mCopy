@@ -83,10 +83,13 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertFalse(files.fileExists(atPath: target("large.bin").path))
         let expected = try Data(contentsOf: original)
         let second = TransferEngine(journal: journal)
+        var written: Int64 = 0
+        second.onProgress = { if $0.fraction == 1 { written = $0.writtenBytes } }
         try second.run(second.load())
         XCTAssertEqual(try Data(contentsOf: target("large.bin")), expected)
         XCTAssertFalse(files.fileExists(atPath: original.path))
         XCTAssertTrue(try hiddenFiles().isEmpty)
+        XCTAssertEqual(written, 2 * 1_048_576, "Checking the saved prefix must not count as new writes.")
     }
 
     func testChangedPartialIsRejectedAndOriginalRetained() throws {
@@ -484,6 +487,7 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertEqual(final.totalFiles, 2)
         XCTAssertEqual(final.totalBytes, 3 * 1_048_576 + 5)
         XCTAssertEqual(final.copiedBytes, final.totalBytes)
+        XCTAssertEqual(final.writtenBytes, final.totalBytes)
     }
 
     func testEarlierVerifierDoesNotRegressLaterFileProgress() throws {
@@ -596,6 +600,7 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertEqual(last?.completedFiles, 1)
         XCTAssertEqual(last?.totalFiles, 1)
         XCTAssertTrue(last?.message.contains("skipped") == true)
+        XCTAssertEqual(last?.writtenBytes, 0)
         XCTAssertTrue(files.fileExists(atPath: original.path))
     }
 

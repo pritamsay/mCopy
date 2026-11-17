@@ -111,6 +111,7 @@ extension TransferEngine {
                 }
             } else {
                 try output.write(contentsOf: data)
+                progress.recordWrite(data.count)
                 try output.synchronize()
                 try afterPublicationChunk?()
             }

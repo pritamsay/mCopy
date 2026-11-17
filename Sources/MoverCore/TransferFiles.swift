@@ -187,6 +187,7 @@ extension TransferEngine {
             }
             try beforeIO()
             try output.write(contentsOf: data)
+            progress.recordWrite(data.count)
             hasher.update(data: data)
             copied += Int64(data.count)
             pacedBytes += Int64(data.count)

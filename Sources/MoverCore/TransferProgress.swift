@@ -18,6 +18,19 @@ final class TransferProgress {
     var completedFiles = 0
     var totalFiles = 0
     var sequence: UInt64 = 0
+    var writtenBytes: Int64 = 0
+
+    func recordWrite(_ count: Int) {
+        lock.lock()
+        writtenBytes += Int64(count)
+        lock.unlock()
+    }
+
+    var writtenByteCount: Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return writtenBytes
+    }
 
     func begin(_ job: Job) {
         lock.lock()
@@ -42,6 +55,7 @@ final class TransferProgress {
         completedFiles = portions.indices.filter { !directories[$0] && portions[$0] >= 1 }.count
         totalFiles = directories.filter { !$0 }.count
         sequence = 0
+        writtenBytes = 0
     }
 
     func update(_ message: String, index: Int, portion: Double, lane: String = "") -> Progress {
@@ -63,6 +77,6 @@ final class TransferProgress {
         // has meaningful progress and 100% still means all entries are finished.
         return Progress(message: message, fraction: min(0.999, totalWeight == 0 ? 0 : finishedWeight / totalWeight),
             copiedBytes: copiedBytes, totalBytes: totalBytes, completedFiles: completedFiles,
-            totalFiles: totalFiles, copyingFile: copyingFile, verifyingFile: verifyingFile, sequence: sequence)
+            totalFiles: totalFiles, copyingFile: copyingFile, verifyingFile: verifyingFile, sequence: sequence, writtenBytes: writtenBytes)
     }
 }
