@@ -1,5 +1,13 @@
 # Validation
 
+## 3.3.0 automatic status and network approval
+
+60 tests passed before publication, including Pause/Resume during copying, Pause/Resume during verification with move originals retained, and safe cancellation/recovery while suspended. Existing conflict tests still cover Replace, Rename, Skip and same-folder renaming.
+
+The packaged status window was exercised on generated files: Pause changed to Resume, verification stayed at 88% while paused, and Resume completed the verified move at 100%. Root and submenu source checks confirm there is no transfer-status context command. Universal builds, isolated HTTP install/update/uninstall and real SMB copy/move/replacement/recovery tests passed.
+
+The installer now launches the installed app with `--setup-network-access`. It requests a read-only listing of one mounted network-volume root to trigger macOS's native approval, without touching NAS file contents or privacy settings. If no NAS is mounted, the first transfer requests access normally. A permission already allowed by macOS is not reset to manufacture another prompt. Ad-hoc signing cannot guarantee that approval survives later signature-changing updates.
+
 ## 3.2.0 status and permission update
 
 57 tests passed before publishing, including byte-weighted progress, concurrent copy/verification ordering, final completion only after verified move cleanup, and empty-folder/skipped-file completion. Both universal architectures built successfully.

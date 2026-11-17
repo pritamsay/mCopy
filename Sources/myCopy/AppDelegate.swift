@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var transferWindow: TransferWindow = {
         let window = TransferWindow()
         window.onCancel = { [weak self] in self?.cancelTransfer() }
-        window.onPermissions = { PermissionSetup.show() }
+        window.onPause = { [weak self] in self?.togglePause() }
         return window
     }()
 
@@ -29,8 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerLoginItem()
+        if CommandLine.arguments.contains("--setup-network-access") {
+            DispatchQueue.global(qos: .utility).async { NetworkVolumeAccess.requestMountedVolumes() }
+        }
         processNextRequest()
-        DispatchQueue.main.async { PermissionSetup.showIfNeeded() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -78,7 +80,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func handleURL(_ url: URL) {
         guard !quitting, url.scheme == "mycopy" else { return }
-        if url.host == "status" { transferWindow.show(); return }
         guard url.host == "paste",
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
         let items = parts.queryItems ?? []
@@ -173,7 +174,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             progressLock.unlock()
             self.engine = engine
             transferWindow.cancelButton.isEnabled = !request.cancelled
+            transferWindow.pauseButton.isEnabled = !request.cancelled
             if quitting { engine.pause() }
+            else if transferWindow.paused { engine.suspend() }
         }
         return engine
     }
@@ -323,8 +326,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Keep Transferring")
         alert.addButton(withTitle: "Cancel Transfer")
         if alert.runModal() == .alertSecondButtonReturn, running, engine === current {
+            transferWindow.setPaused(false)
+            transferWindow.pauseButton.isEnabled = false
+            transferWindow.cancelButton.isEnabled = false
             current.pause()
             notice("Cancelling safely. Waiting for current disk operations…")
         }
+    }
+
+    func togglePause() {
+        guard !quitting, running, let engine, transferWindow.pauseButton.isEnabled else { return }
+        let paused = !transferWindow.paused
+        if paused { engine.suspend() }
+        else { engine.resume() }
+        transferWindow.setPaused(paused)
     }
 }

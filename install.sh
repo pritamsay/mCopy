@@ -84,7 +84,10 @@ if [[ "$ISOLATED" == 0 ]]; then
     if ! "$INSTALLED_APP/Contents/MacOS/myCopy" --register-login; then
         printf 'Enable myCopy in System Settings → Login Items to start it automatically.\n'
     fi
-    /usr/bin/open -gj "$INSTALLED_APP"
+    /usr/bin/open -gj "$INSTALLED_APP" --args --setup-network-access
 fi
 RESTORE_OLD=0
 printf 'Installed mCopy at %s\nUse Finder → right-click → mCopy.\n' "$INSTALLED_APP"
+if [[ "$ISOLATED" == 0 ]]; then
+    printf 'If a NAS is mounted, macOS may now show its network-volume prompt. Click Allow once.\nIf no NAS is mounted, this prompt appears with your first NAS transfer.\n'
+fi

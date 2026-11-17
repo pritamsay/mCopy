@@ -12,6 +12,8 @@ curl -fsSL https://raw.githubusercontent.com/pritamsay/mCopy/main/install.sh | /
 
 The command downloads the prebuilt app from this repository's latest GitHub Release, verifies SHA-256 and its code signature, installs to `~/Applications/myCopy.app`, enables the Finder extension, and registers login startup. It supports **Apple Silicon and Intel on macOS 13+**. Xcode, Swift, Git, and the GitHub CLI are not needed on the destination Mac. Run the same command to update.
 
+When a NAS is mounted, the installer launches mCopy's network-access check. If macOS displays **“myCopy would like to access files on a network volume,” click Allow once**. If no NAS is mounted, this happens on the first NAS transfer. Normal approval uses this native prompt; no Full Disk Access setup window is required.
+
 macOS may require one-time approval for the Finder extension or login item in **System Settings → General → Login Items & Extensions**. The app uses an ad-hoc signature and is not Apple-notarized; macOS security policy may also require approval before running it.
 
 ## Uninstall
@@ -32,15 +34,17 @@ Volumes containing unfinished transfers must be available for safe recovery. If 
 
 Copy retains the original. Cut moves it and deletes the original only after the destination verifies. Pasting into the same folder asks for a new name. Other duplicate names offer Replace, Rename, and Skip. Folder Replace merges folders and keeps unrelated destination files.
 
-A transfer status window appears when copying or moving. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. Hide/close the window to keep transferring in the background. Reopen it through **mCopy → Show Transfer Status** in Finder. **Cancel Transfer** safely cancels the active request after confirmation.
+A transfer status window appears automatically when copying or moving. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. **Pause / Resume** suspends and resumes both workers without cancelling the transfer. **Cancel Transfer** safely cancels the active request after confirmation, including while paused. A disk operation already in flight may finish before pausing. Pause lasts for the current app session; saved requests resume after an app restart.
+
+Finder's mCopy submenu contains only Copy, Cut, Paste, and Paste to Folder when applicable. It has no transfer-status command. Closing the status window keeps work running in the background; opening the installed app again shows its current status.
 
 The app has no Dock icon or menu bar item. It starts at login and resumes saved requests.
 
-## One-time access setup
+## Network-volume permission
 
-The installed app explains file access once. To authorize protected folders and disks broadly, use **Open System Settings**, add `~/Applications/myCopy.app` under **Privacy & Security → Full Disk Access**, and enable it. Alternatively choose **Use Existing Permissions** and allow individual locations through macOS prompts. The status window's **Permissions…** button reopens these instructions.
+The installer requests access from the installed app itself by listing a mounted NAS root; it does not modify NAS files or automatically approve anything. macOS owns and remembers the user's Allow choice. A normal shell installer cannot silently grant permanent access. If access was previously denied, it may need to be changed in **Privacy & Security → Files and Folders → myCopy → Network Volumes**.
 
-macOS retains granted permissions for the installed app; mCopy never grants them to itself or changes system privacy settings. Revocation, a clean uninstall, or an update with a different signing identity can require approval again. This release is ad-hoc signed, so permission retention across future builds is not guaranteed. NAS login credentials and server permissions are separate.
+Revocation, a clean uninstall, or an update with a different signing identity can require approval again. This release is ad-hoc signed, so permission retention across future builds is not guaranteed. Stable Apple Developer ID signing is needed for reliable app identity across release updates. NAS login credentials and server permissions are separate. See [Apple's file-access guidance](https://support.apple.com/guide/security/controlling-app-access-to-files-secddd1d86a6/web) and [managed privacy policies](https://support.apple.com/guide/deployment/privacy-preferences-policy-control-payload-dep38df53c2a/web).
 
 mCopy shares its own file selection through a named pasteboard and reads only general-clipboard metadata to notice when another app replaces the selection. It does not read other apps' general-clipboard contents or require broad clipboard access.
 

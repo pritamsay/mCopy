@@ -27,6 +27,13 @@ final class UISelfTest {
         test.window.begin(request, queued: 0)
         let engine = TransferEngine(journal: root.appendingPathComponent("state/job.json"))
         test.window.cancelButton.isEnabled = false
+        test.window.pauseButton.isEnabled = true
+        test.window.onPause = {
+            let paused = !test.window.paused
+            if paused { engine.suspend() }
+            else { engine.resume() }
+            test.window.setPaused(paused)
+        }
         engine.onProgress = { progress in
             test.lock.lock()
             if test.latest == nil || progress.sequence >= test.latest!.sequence { test.latest = progress }

@@ -1,7 +1,7 @@
 import AppKit
 import MoverCore
 
-// This window appears only for a transfer, or when Show Transfer Status is used.
+// This window appears automatically for a transfer.
 // Closing it hides the window; it never interrupts the transfer.
 final class TransferWindow: NSWindowController {
     let heading = NSTextField(labelWithString: "No active transfers")
@@ -13,8 +13,11 @@ final class TransferWindow: NSWindowController {
     let verifying = NSTextField(labelWithString: "")
     let status = NSTextField(wrappingLabelWithString: "Copy or cut files using mCopy in Finder.")
     let cancelButton = NSButton(title: "Cancel Transfer", target: nil, action: nil)
+    let pauseButton = NSButton(title: "Pause", target: nil, action: nil)
+    var paused = false
+    var operationTitle = "Copying files"
     var onCancel: (() -> Void)?
-    var onPermissions: (() -> Void)?
+    var onPause: (() -> Void)?
 
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 350),
@@ -39,13 +42,14 @@ final class TransferWindow: NSWindowController {
         let progressRow = NSStackView(views: [progressBar, percentage])
         progressRow.spacing = 12
         percentage.widthAnchor.constraint(equalToConstant: 46).isActive = true
-        let permissions = NSButton(title: "Permissions…", target: self, action: #selector(permissionsClicked))
-        let hide = NSButton(title: "Hide", target: self, action: #selector(hideClicked))
+        pauseButton.target = self
+        pauseButton.action = #selector(pauseClicked)
+        pauseButton.isEnabled = false
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked)
         cancelButton.isEnabled = false
         let spacer = NSView()
-        let buttons = NSStackView(views: [permissions, spacer, hide, cancelButton])
+        let buttons = NSStackView(views: [spacer, pauseButton, cancelButton])
         buttons.spacing = 10
         let stack = NSStackView(views: [heading, destination, progressRow, counts, copying, verifying, status, buttons])
         stack.orientation = .vertical
@@ -69,7 +73,11 @@ final class TransferWindow: NSWindowController {
     required init?(coder: NSCoder) { fatalError("Not used") }
 
     func begin(_ request: TransferRequest, queued: Int) {
-        heading.stringValue = request.move ? "Moving files" : "Copying files"
+        operationTitle = request.move ? "Moving files" : "Copying files"
+        heading.stringValue = operationTitle
+        paused = false
+        pauseButton.title = "Pause"
+        pauseButton.isEnabled = false
         destination.stringValue = "To: " + request.destination
         copying.stringValue = "Copy: Preparing files…"
         verifying.stringValue = "Verification: Waiting for copied files"
@@ -93,21 +101,39 @@ final class TransferWindow: NSWindowController {
         copying.stringValue = "Copy: " + (progress.copyingFile.isEmpty ? "Waiting / finished" : progress.copyingFile)
         verifying.stringValue = "Verification: " + (progress.verifyingFile.isEmpty ? "Waiting / finished" : progress.verifyingFile)
         status.stringValue = progress.fraction == 1 ? progress.message : "Copying and checksum verification run together."
+        if paused { showPausedMessage() }
         if progress.fraction == 1 { finish(progress.message) }
     }
 
-    func waiting(_ message: String) { status.stringValue = message }
+    func waiting(_ message: String) {
+        if paused { showPausedMessage() }
+        else { status.stringValue = message }
+    }
+
+    func setPaused(_ value: Bool) {
+        paused = value
+        pauseButton.title = value ? "Resume" : "Pause"
+        heading.stringValue = value ? "Transfer paused" : operationTitle
+        if value { showPausedMessage() }
+        else { status.stringValue = "Resuming copying and verification…" }
+    }
+
+    func showPausedMessage() {
+        status.stringValue = "Paused. In-flight disk operations may finish first. Click Resume to continue."
+    }
 
     func finish(_ message: String) {
         heading.stringValue = message.hasPrefix("Transfer complete") ? "Transfer complete" : "Transfer stopped"
         status.stringValue = message
         cancelButton.isEnabled = false
+        pauseButton.isEnabled = false
+        paused = false
+        pauseButton.title = "Pause"
         progressBar.stopAnimation(nil)
         progressBar.isIndeterminate = false
     }
 
     func show() { window?.orderFrontRegardless() }
-    @objc func hideClicked() { window?.orderOut(nil) }
     @objc func cancelClicked() { onCancel?() }
-    @objc func permissionsClicked() { onPermissions?() }
+    @objc func pauseClicked() { onPause?() }
 }

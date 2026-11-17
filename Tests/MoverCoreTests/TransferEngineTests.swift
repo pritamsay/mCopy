@@ -504,6 +504,84 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertGreaterThan(done.sequence, checking.sequence)
     }
 
+    func testUserPauseResumesTheSameMoveWithoutCancelling() throws {
+        let original = try largeFile()
+        let engine = TransferEngine(journal: journal)
+        let paused = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var failure: Error?
+        var firstChunk = true
+        engine.afterChunk = {
+            if firstChunk { firstChunk = false; engine.suspend(); paused.signal() }
+        }
+        let job = try prepare(engine, [original], move: true)
+        DispatchQueue.global().async {
+            do { try engine.run(job) }
+            catch { lock.lock(); failure = error; lock.unlock() }
+            finished.signal()
+        }
+        XCTAssertEqual(paused.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(finished.wait(timeout: .now() + 0.1), .timedOut)
+        XCTAssertTrue(files.fileExists(atPath: original.path))
+        XCTAssertFalse(files.fileExists(atPath: target("large.bin").path))
+        engine.resume()
+        XCTAssertEqual(finished.wait(timeout: .now() + 5), .success)
+        lock.lock(); let error = failure; lock.unlock()
+        XCTAssertNil(error)
+        XCTAssertEqual(try Data(contentsOf: target("large.bin")).count, 3 * 1_048_576)
+        XCTAssertFalse(files.fileExists(atPath: original.path))
+    }
+
+    func testUserPauseDuringVerificationRetainsMoveOriginal() throws {
+        let original = try largeFile()
+        let engine = TransferEngine(journal: journal)
+        let paused = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var failure: Error?
+        engine.onVerificationStarted = { _ in engine.suspend(); paused.signal() }
+        let job = try prepare(engine, [original], move: true)
+        DispatchQueue.global().async {
+            do { try engine.run(job) }
+            catch { lock.lock(); failure = error; lock.unlock() }
+            finished.signal()
+        }
+        XCTAssertEqual(paused.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(finished.wait(timeout: .now() + 0.1), .timedOut)
+        XCTAssertTrue(files.fileExists(atPath: original.path))
+        engine.resume()
+        XCTAssertEqual(finished.wait(timeout: .now() + 5), .success)
+        lock.lock(); let error = failure; lock.unlock()
+        XCTAssertNil(error)
+        XCTAssertFalse(files.fileExists(atPath: original.path))
+    }
+
+    func testCancelWhileUserPausedWakesWorkersAndRecoversPartial() throws {
+        let original = try largeFile()
+        let engine = TransferEngine(journal: journal)
+        let paused = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var failure: Error?
+        engine.afterChunk = { engine.suspend(); paused.signal() }
+        let job = try prepare(engine, [original], move: true)
+        DispatchQueue.global().async {
+            do { try engine.run(job) }
+            catch { lock.lock(); failure = error; lock.unlock() }
+            finished.signal()
+        }
+        XCTAssertEqual(paused.wait(timeout: .now() + 5), .success)
+        engine.pause() // Safe stop, including when the worker is suspended.
+        XCTAssertEqual(finished.wait(timeout: .now() + 5), .success)
+        lock.lock(); let error = failure; lock.unlock()
+        guard let error, case TransferError.stopped = error else { return XCTFail("Expected safe cancellation, got \(String(describing: error))") }
+        try TransferEngine(journal: journal).cancelSavedTransfer()
+        XCTAssertTrue(files.fileExists(atPath: original.path))
+        XCTAssertEqual(try Data(contentsOf: original).count, 3 * 1_048_576)
+        XCTAssertTrue(try hiddenFiles().isEmpty)
+    }
+
     func testEmptyFolderAndSkippedFileProgressStillCompletes() throws {
         let folder = source.appendingPathComponent("empty")
         try files.createDirectory(at: folder, withIntermediateDirectories: true)

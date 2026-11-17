@@ -31,8 +31,9 @@ public final class TransferEngine {
     }
 
     let files = FileManager.default
-    let stopLock = NSLock()
+    let stopLock = NSCondition()
     var stopRequested = false
+    var suspended = false
     var pipelineFailure: Error?
     let stateLock = NSRecursiveLock()
     var activeJob: Job?
@@ -49,6 +50,23 @@ public final class TransferEngine {
     public func pause() {
         stopLock.lock()
         stopRequested = true
+        suspended = false
+        stopLock.broadcast()
+        stopLock.unlock()
+    }
+
+    // A user pause keeps both workers and the journal alive. The older pause()
+    // method requests a safe stop for cancellation, shutdown and recovery.
+    public func suspend() {
+        stopLock.lock()
+        if !stopRequested { suspended = true }
+        stopLock.unlock()
+    }
+
+    public func resume() {
+        stopLock.lock()
+        suspended = false
+        stopLock.broadcast()
         stopLock.unlock()
     }
 
@@ -57,6 +75,7 @@ public final class TransferEngine {
 
     func checkStop() throws {
         stopLock.lock()
+        while suspended && !stopRequested && pipelineFailure == nil { stopLock.wait() }
         let stopped = stopRequested
         let failure = pipelineFailure
         stopLock.unlock()

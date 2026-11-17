@@ -31,6 +31,7 @@ extension TransferEngine {
     func recordFailure(_ error: Error) {
         stopLock.lock()
         if pipelineFailure == nil { pipelineFailure = error }
+        stopLock.broadcast()
         stopLock.unlock()
     }
 
