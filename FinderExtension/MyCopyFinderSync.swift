@@ -41,8 +41,6 @@ final class MyCopyFinderSync: FIFinderSync {
         selected = controller.selectedItemURLs() ?? []
         target = controller.targetedURL()
         currentMenuKind = menuKind
-        let menu = NSMenu(title: "mCopy")
-        menu.autoenablesItems = false
         let submenu = NSMenu(title: "mCopy")
         submenu.autoenablesItems = false
         let isItem = menuKind == .contextualMenuForItems || menuKind == .contextualMenuForSidebar
@@ -57,10 +55,7 @@ final class MyCopyFinderSync: FIFinderSync {
             case .pasteToFolder: add(command.rawValue, action: #selector(pasteToFolder), enabled: true, to: submenu)
             }
         }
-        let root = NSMenuItem(title: "mCopy", action: nil, keyEquivalent: "")
-        root.submenu = submenu
-        menu.addItem(root)
-        return menu
+        return FinderMenu.wrap(submenu)
     }
 
     func add(_ title: String, action: Selector, enabled: Bool, to menu: NSMenu) {

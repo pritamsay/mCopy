@@ -3,6 +3,15 @@ import AppKit
 @testable import MoverCore
 
 final class FinderWorkflowTests: XCTestCase {
+    func testRootMenuUsesTheNativeSubmenuClickAction() throws {
+        let submenu = NSMenu(title: "mCopy")
+        submenu.addItem(withTitle: "Copy", action: nil, keyEquivalent: "")
+        let root = try XCTUnwrap(FinderMenu.wrap(submenu).items.first)
+        XCTAssertTrue(root.submenu === submenu)
+        XCTAssertEqual(root.action, #selector(NSMenu.submenuAction(_:)))
+        XCTAssertTrue(root.isEnabled)
+    }
+
     func testClickedFolderWinsOverFinderParentTarget() {
         let parent = URL(fileURLWithPath: "/Users/example/Source")
         let folder = parent.appendingPathComponent("SelectedFolder")

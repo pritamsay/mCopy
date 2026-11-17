@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 public enum FinderCommand: String {
     case copy = "Copy"
@@ -8,6 +9,17 @@ public enum FinderCommand: String {
 }
 
 public enum FinderMenu {
+    public static func wrap(_ submenu: NSMenu) -> NSMenu {
+        let menu = NSMenu(title: "mCopy")
+        menu.autoenablesItems = false
+        let root = NSMenuItem(title: "mCopy", action: nil, keyEquivalent: "")
+        menu.addItem(root)
+        // This assigns AppKit's submenuAction: as well as the submenu. A nil
+        // action can be treated as a completed command when Finder clicks it.
+        menu.setSubmenu(submenu, for: root)
+        return menu
+    }
+
     public static func pasteDestination(target: URL?, selected: [URL], itemMenu: Bool) -> URL? {
         // In Finder item menus targetedURL can be the containing directory.
         // selectedItemURLs identifies the actual clicked/selected entries.

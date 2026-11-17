@@ -30,7 +30,11 @@ enum Management {
                     "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
                     "bundlePath": Bundle.main.bundleURL.path,
                     "loginStatus": loginStatus(),
-                    "runningProcesses": runningApps().map { Int($0.processIdentifier) }
+                    "runningProcesses": runningApps().map { Int($0.processIdentifier) },
+                    "runningApplications": runningApps().map { application in
+                        ["pid": Int(application.processIdentifier), "hidden": application.isHidden,
+                         "active": application.isActive, "path": application.bundleURL?.path ?? "unknown"] as [String: Any]
+                    }
                 ]
                 let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
                 print(String(decoding: data, as: UTF8.self))

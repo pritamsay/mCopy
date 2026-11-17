@@ -24,6 +24,7 @@ final class TransferWindow: NSWindowController {
             styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "mCopy — Transfer Status"
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init(window: window)
         heading.font = .systemFont(ofSize: 20, weight: .semibold)
         for label in [destination, counts, copying, verifying] {
@@ -133,7 +134,16 @@ final class TransferWindow: NSWindowController {
         progressBar.isIndeterminate = false
     }
 
-    func show() { window?.orderFrontRegardless() }
+    func show() {
+        guard let window else { return }
+        // Startup runs in the background. Ordering an inactive app's window
+        // alone can leave it behind Finder, minimized, or on a different Space.
+        NSApp.unhide(nil)
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
     @objc func cancelClicked() { onCancel?() }
     @objc func pauseClicked() { onPause?() }
 }

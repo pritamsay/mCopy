@@ -1,4 +1,7 @@
-# mCopy 3.3.0
+# mCopy 3.3.1
+
+- Bring transfer status to the foreground on the active desktop, including after background startup or minimizing the window.
+- Assign AppKit's native submenu-opening action to the mCopy parent menu item.
 
 - Automatic copy/move status window with progress, bytes, file counts, concurrent verification, and NAS waiting messages.
 - Progress is weighted by bytes and remains monotonic while the next file copies. Completion reaches 100% only after verification finishes.

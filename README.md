@@ -36,6 +36,8 @@ Copy retains the original. Cut moves it and deletes the original only after the 
 
 A transfer status window appears automatically when copying or moving. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. **Pause / Resume** suspends and resumes both workers without cancelling the transfer. **Cancel Transfer** safely cancels the active request after confirmation, including while paused. A disk operation already in flight may finish before pausing. Pause lasts for the current app session; saved requests resume after an app restart.
 
+Starting a transfer unhides and activates mCopy, restores a minimized status window, and brings it onto the active desktop. The app remains in the background while idle.
+
 Finder's mCopy submenu contains only Copy, Cut, Paste, and Paste to Folder when applicable. It has no transfer-status command. Closing the status window keeps work running in the background; opening the installed app again shows its current status.
 
 The app has no Dock icon or menu bar item. It starts at login and resumes saved requests.

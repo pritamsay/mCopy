@@ -1,5 +1,11 @@
 # Validation
 
+## 3.3.1 visibility and submenu follow-up
+
+61 tests passed before publication. The menu wrapper now uses AppKit's `setSubmenu(_:for:)`, which assigns `submenuAction:` instead of leaving the parent action nil. The regression test verifies that action and the linked submenu.
+
+The packaged UI self-test deliberately hides and minimizes its own app/window after launch, then starts a generated transfer. It checks visibility, non-minimized state, non-hidden app state and the active Space before any computer-control inspection activates the app. This check and the verified move passed. The isolated HTTP installation/update/removal test also passed with the actual installation and data unchanged.
+
 ## 3.3.0 automatic status and network approval
 
 60 tests passed before publication, including Pause/Resume during copying, Pause/Resume during verification with move originals retained, and safe cancellation/recovery while suspended. Existing conflict tests still cover Replace, Rename, Skip and same-folder renaming.

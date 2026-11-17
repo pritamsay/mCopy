@@ -34,6 +34,22 @@ final class UISelfTest {
             else { engine.resume() }
             test.window.setPaused(paused)
         }
+        // Exercise the state that ordinary foreground UI inspection would
+        // accidentally hide: startup/minimized windows in a background app.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            test.window.window?.miniaturize(nil)
+            app.hide(nil)
+            test.window.begin(request, queued: 0)
+            test.window.pauseButton.isEnabled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard let window = test.window.window, window.isVisible,
+                      !window.isMiniaturized, !app.isHidden, window.isOnActiveSpace else {
+                    fputs("FAIL: transfer status did not restore from hidden/minimized state.\n", stderr)
+                    exit(1)
+                }
+                print("PASS: transfer status restored from hidden/minimized state on the active Space.")
+            }
+        }
         engine.onProgress = { progress in
             test.lock.lock()
             if test.latest == nil || progress.sequence >= test.latest!.sequence { test.latest = progress }
