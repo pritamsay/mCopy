@@ -10,6 +10,8 @@ The packaged `--power-self-test` created a native idle-system-sleep assertion, r
 
 Generated-file NAS copy/move with a shared 0.5 MB/s test budget, replacement, interrupted replacement recovery and fixture cleanup passed. The production feature remains dynamic; that explicit budget is confined to the manual test. Both universal architectures and signatures passed.
 
+The final isolated HTTP install/update/uninstall test passed and confirmed that the actual app/user data were unchanged. The public v3.4.1 release was then installed through the README command with no pending user requests. The installed build 18 executable matched the tested package; login startup and the sole 3.4.1 Finder extension were enabled. Native power-assertion and passive-monitor self-tests passed from that installed executable. Finder commands were inspected without replacing the user's existing mCopy selection; unused marked fixtures were removed. GitHub Actions run 44240302958 passed its tests, universal build, shell/signature/packaging checks and isolated installer smoke test.
+
 ## 3.4.0 independent verification, Dock and internet priority
 
 74 tests passed before publication. A six-file regression holds the first verifier until the entire copy phase has finished, proving that verification no longer blocks the rest of the batch. A second test cancels with a full verification backlog and confirms that unverified originals survive recovery.
