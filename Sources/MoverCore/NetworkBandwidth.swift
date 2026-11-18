@@ -33,10 +33,14 @@ final class NetworkBandwidth {
         guard rate > 0 else { return (remaining, 0) }
         refill(at: time)
         let amount = min(remaining, Int(capacity))
-        if tokens >= Double(amount) {
-            tokens -= Double(amount)
-            return (amount, 0)
+        let available = min(amount, Int(tokens))
+        if available > 0 {
+            tokens -= Double(available)
+            return (available, 0)
         }
-        return (0, (Double(amount) - tokens) / rate)
+        // Spend small amounts as they accrue, rather than waiting minutes for
+        // a whole 64 KiB chunk when internet traffic reduces the allowance.
+        let next = min(Double(amount), max(1, rate * 0.05))
+        return (0, max(0, next - tokens) / rate)
     }
 }

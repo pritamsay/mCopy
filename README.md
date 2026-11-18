@@ -36,6 +36,8 @@ Copy retains the original. Cut moves it and deletes the original only after the 
 
 A transfer status window appears automatically when copying or moving and stays above other windows until completion or minimizing. It shows overall progress, processed bytes, finished-file counts, the current copy and verification files, NAS waiting messages, and completion. Copying and verification continue together; 100% is reserved for verified completion. **Pause / Resume** suspends and resumes both workers without cancelling the transfer. **Cancel Transfer** safely cancels the active request after confirmation, including while paused. A disk operation already in flight may finish before pausing. Pause lasts for the current app session; saved requests resume after an app restart.
 
+If a file is halfway transferred when you cancel, its complete original is kept and mCopy removes its own incomplete copy once the NAS is accessible. Files already verified and moved stay at the destination; cancellation does not undo them. Cancel discards partial progress. Use Pause to retain it for resuming. If safe cleanup is blocked by access or changed files, the recovery record is retained rather than deleting unidentified data.
+
 Starting a transfer unhides and activates mCopy on the active desktop. The compact 420×230 window shows live write speed beside the byte/file counts. Speed uses a two-second average of newly written bytes, excluding skipped files and checks of old partial data. Minimizing keeps the window down, including across queued requests. A live Dock progress bar and percentage remain available; click the Dock icon to restore the window. The completed Dock status stays available until its window is closed.
 
 Finder's mCopy submenu contains only Copy, Cut, Paste, and Paste to Folder when applicable. It has no transfer-status command. Closing the status window keeps work running in the background; opening the installed app again shows its current status.
@@ -49,6 +51,18 @@ NAS transfers enable **Internet priority** by default. When other Wi-Fi traffic 
 Monitoring uses macOS's built-in `nettop` with passive Wi-Fi byte counters, including TCP and UDP. It does not run speed tests, capture packet contents or save endpoints/process histories. SMB, AFP and NFS ports are treated as storage traffic; other Wi-Fi traffic receives priority, including background apps and non-storage LAN traffic. Wired/local transfers receive no Wi-Fi limit. If monitoring is unavailable, transfers remain unrestricted.
 
 This is best-effort headroom on this Mac, not router-wide QoS or a guarantee of full internet speed. Other devices, router queues and the internet connection itself remain outside mCopy's control.
+
+The limiter measures NAS traffic before applying a budget when internet traffic is already active at startup. Small background traffic alone does not keep NAS throttled. Low allowances are spent in small increments, avoiding waits for a full 64 KiB token allocation.
+
+## Sleep and automatic resume
+
+While a transfer or its recovery is active, mCopy holds an app-scoped macOS **PreventUserIdleSystemSleep** assertion and an activity token. This prevents automatic system sleep; the display may turn off normally. No global power settings are changed. The assertion is released when the request finishes or stops.
+
+Explicit Sleep, closing a laptop lid, shutdown and low-battery sleep can still occur, as described by [Apple's power-assertion documentation](https://developer.apple.com/documentation/iokit/kiopmassertiontypepreventuseridlesystemsleep). Sleep/wake handling suspends and resumes work without treating sleep as Cancel, and preserves a separate user Pause. After restart/login, mCopy reloads retained requests, checks existing partial bytes against their originals, and writes the remaining bytes. It waits/retries if NAS access is unavailable, including before scanning a new request. A previously saved cancellation resumes cleanup only.
+
+An unexpected worker stop or a system-aborted conflict dialog is retried without deleting saved progress. Cleanup is requested only by an explicit Cancel action or a previously saved cancellation intent.
+
+Automatic startup requires macOS login startup to remain enabled and the user to log in. NAS credentials, permissions and a reachable/mounted share are still needed. Unexpected file changes require attention rather than bypassing content/identity checks. Restart tests use generated interrupted jobs; actual power loss or forced sleep of the user's Mac is not part of testing.
 
 ## Network-volume permission
 
@@ -101,4 +115,4 @@ MCOPY_NAS_PATH=/Volumes/YourShare zsh scripts/test-nas.sh
 
 The real-share test covers copy, move, replacement, and rollback of an interrupted replacement. It never disconnects the share. See [VALIDATION.md](VALIDATION.md) for test coverage and limits.
 
-Developer management commands are available through the app executable: `--status`, `--self-test`, `--network-self-test`, `--stop`, `--register-login`, and `--prepare-uninstall`. The passive network self-test checks monitoring availability without transferring files. The interactive `--ui-self-test` uses generated files and requires clicking its native Minimize button to check minimized Dock progress. GitHub Actions validates builds/tests; the manual Publish release workflow creates subsequent checked releases.
+Developer management commands are available through the app executable: `--status`, `--self-test`, `--network-self-test`, `--power-self-test`, `--recovery-self-test`, `--stop`, `--register-login`, and `--prepare-uninstall`. The passive network self-test checks monitoring availability without transferring files. The power self-test creates, checks and releases an idle-sleep assertion without changing power settings. The recovery self-test runs the real app startup against a generated halfway-interrupted move and an isolated queue. The interactive `--ui-self-test` uses generated files and requires clicking its native Minimize button to check minimized Dock progress. GitHub Actions validates builds/tests; the manual Publish release workflow creates subsequent checked releases.

@@ -37,7 +37,7 @@ public final class RequestStore {
         try handle.synchronize()
     }
 
-    public func pending() throws -> [TransferRequest] {
+    public func pending(includePaused: Bool = false) throws -> [TransferRequest] {
         guard files.fileExists(atPath: directory.path) else { return [] }
         var requests: [TransferRequest] = []
         for url in try files.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) where url.pathExtension == "json" {
@@ -45,9 +45,18 @@ public final class RequestStore {
             guard UUID(uuidString: request.id) != nil, url.lastPathComponent == request.id + ".json" else {
                 throw TransferError.unsafe("Invalid saved transfer request.")
             }
-            if !request.paused { requests.append(request) }
+            if includePaused || !request.paused { requests.append(request) }
         }
         return requests.sorted { $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created }
+    }
+
+    // Retained errors get another safe attempt after launch/wake. A saved
+    // cancellation stays a cancellation: only its recovery cleanup is resumed.
+    public func resumeRetained() throws {
+        for var request in try pending(includePaused: true) where request.paused {
+            request.paused = false
+            try save(request)
+        }
     }
 
     public func journal(for request: TransferRequest) -> URL {

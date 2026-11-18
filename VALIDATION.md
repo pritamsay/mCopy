@@ -1,5 +1,15 @@
 # Validation
 
+## 3.4.1 sleep, restart and low-rate transfer fixes
+
+84 tests passed before publication. New coverage includes a move suspended by simulated system sleep then resumed on wake, a separate user Pause surviving wake, shutdown while system-suspended followed by a new engine verifying the saved prefix and writing only the remainder, retained requests requeued on startup with cancellation intent preserved, and an interrupted conflict retaining its journal/original instead of becoming cancellation.
+
+Internet-priority regressions cover low-rate incremental token spending, internet already active at startup, small background traffic, NAS metadata excluded from capacity learning, and the last delta of finite counter snapshots. Live passive monitoring passed after replacing indefinitely buffered logging with two-snapshot polling. No competing-download throughput guarantee is inferred from these tests.
+
+The packaged `--power-self-test` created a native idle-system-sleep assertion, read its active level from macOS, released it, and confirmed it no longer existed. The packaged `--recovery-self-test` used the real AppDelegate startup with an isolated generated queue: an 8 MiB move interrupted halfway and retained as paused was automatically resumed. An additional unexpected stop was injected into the live app worker without a user Cancel; startup safely retried it rather than entering cancellation cleanup. Only the remaining 4 MiB were written across those attempts, destination bytes matched, the original was removed after verification, the queue was cleared, and sleep prevention was released. Neither test changes global power settings, the user's real queue, or login registrations. System sleep/wake/shutdown are simulated; physical sleep, restart and power loss are not claimed.
+
+Generated-file NAS copy/move with a shared 0.5 MB/s test budget, replacement, interrupted replacement recovery and fixture cleanup passed. The production feature remains dynamic; that explicit budget is confined to the manual test. Both universal architectures and signatures passed.
+
 ## 3.4.0 independent verification, Dock and internet priority
 
 74 tests passed before publication. A six-file regression holds the first verifier until the entire copy phase has finished, proving that verification no longer blocks the rest of the batch. A second test cancels with a full verification backlog and confirms that unverified originals survive recovery.

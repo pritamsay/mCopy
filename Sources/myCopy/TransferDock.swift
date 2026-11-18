@@ -42,7 +42,10 @@ final class TransferDockView: NSView {
         NSBezierPath(roundedRect: track, xRadius: 7, yRadius: 7).fill()
         let fill = NSRect(x: 10, y: 10, width: 108 * fraction, height: 10)
         (paused ? NSColor.systemOrange : NSColor.systemBlue).setFill()
-        NSBezierPath(roundedRect: fill, xRadius: 5, yRadius: 5).fill()
+        if fill.width > 0 {
+            let radius = min(5, fill.width / 2)
+            NSBezierPath(roundedRect: fill, xRadius: radius, yRadius: radius).fill()
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         let label = paused ? "Paused" : "\(Int(fraction * 100))%"

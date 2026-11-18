@@ -5,12 +5,16 @@ import MoverCore
 // Finder supplies the files and destination. Show status while the workers run.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let worker = DispatchQueue(label: "local.pritam.mycopy.requests", qos: .utility)
-    let store = RequestStore(directory: FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/mCopy/Requests"))
+    let store: RequestStore
+    let managesSystemIntegration: Bool
+    let engineFactory: (URL) -> TransferEngine
     var running = false
     var quitting = false
+    var cancelRequested = false
     var engine: TransferEngine?
-    var activity: NSObjectProtocol?
+    let transferPower = TransferPower()
+    var systemSleeping = false
+    var powerObservers: [NSObjectProtocol] = []
     let progressLock = NSLock()
     var latestProgress: MoverCore.Progress?
     var latestNotice: String?
@@ -18,6 +22,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let internetMonitor = InternetPriorityMonitor()
     var networkJob = false
     var internetPriorityEnabled: Bool { UserDefaults.standard.object(forKey: "internetPriority") as? Bool ?? true }
+
+    init(store: RequestStore = RequestStore(directory: FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/mCopy/Requests")), managesSystemIntegration: Bool = true,
+        engineFactory: @escaping (URL) -> TransferEngine = { TransferEngine(journal: $0) }) {
+        self.store = store
+        self.managesSystemIntegration = managesSystemIntegration
+        self.engineFactory = engineFactory
+        super.init()
+    }
     lazy var transferWindow: TransferWindow = {
         let window = TransferWindow()
         window.onCancel = { [weak self] in self?.cancelTransfer() }
@@ -38,7 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.register(defaults: ["internetPriority": true])
-        registerLoginItem()
+        if managesSystemIntegration { registerLoginItem() }
+        observePowerChanges()
+        resumeRetainedRequests()
         if CommandLine.arguments.contains("--setup-network-access") {
             DispatchQueue.global(qos: .utility).async { NetworkVolumeAccess.requestMountedVolumes() }
         }
@@ -50,11 +65,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { internetMonitor.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        internetMonitor.stop()
+        transferPower.end()
+        for observer in powerObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+    }
+
+    func resumeRetainedRequests() {
+        do { try store.resumeRetained() }
+        catch { showError("mCopy could not resume its saved queue", error) }
+    }
+
+    func observePowerChanges() {
+        let center = NSWorkspace.shared.notificationCenter
+        powerObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.systemSleeping = true
+            self.engine?.systemWillSleep()
+            self.internetMonitor.stop()
+            self.notice("Mac is sleeping. Transfer progress is retained for automatic resume.")
+            NSLog("mCopy: system sleep; transfer retained, not cancelled.")
+        })
+        powerObservers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.systemSleeping = false
+            if self.running {
+                self.engine?.systemDidWake()
+                if self.networkJob, self.internetPriorityEnabled, let engine = self.engine {
+                    self.internetMonitor.start(for: engine)
+                }
+                self.notice("Mac woke up. Resuming; waiting for NAS access if needed…")
+            } else {
+                self.resumeRetainedRequests()
+                self.processNextRequest()
+            }
+            NSLog("mCopy: system wake; resuming saved work.")
+        })
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard running else { return .terminateNow }
         quitting = true
+        NSLog("mCopy: app termination requested; saving transfer for the next launch.")
         engine?.pause()
         // An installer/uninstaller must also be able to stop a request waiting
         // in a rename/conflict dialog, without requiring a visible app window.
@@ -110,11 +162,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func processNextRequest() {
-        guard !running, !quitting else { return }
+        guard !running, !quitting, !systemSleeping else { return }
         do {
             let requests = try store.pending()
             guard let request = requests.first else { return }
             running = true
+            cancelRequested = false
             progressLock.lock()
             latestProgress = nil
             latestNotice = nil
@@ -122,7 +175,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transferWindow.begin(request, queued: max(0, requests.count - 1))
             progressTimer?.invalidate()
             progressTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.refreshProgress() }
-            activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Copying and verifying files")
+            transferPower.start()
+            NSLog("mCopy: starting saved request %@ (move=%d).", request.id, request.move)
             worker.async { [self] in
                 var continueQueue = true
                 var result = "Transfer stopped."
@@ -149,8 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     running = false
                     engine = nil
-                    if let activity { ProcessInfo.processInfo.endActivity(activity) }
-                    activity = nil
+                    transferPower.end()
+                    NSLog("mCopy: request %@ ended: %@", request.id, result)
                     if quitting { NSApp.reply(toApplicationShouldTerminate: true) }
                     else if continueQueue { processNextRequest() }
                 }
@@ -159,13 +213,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func makeEngine(_ request: TransferRequest) -> TransferEngine {
-        let engine = TransferEngine(journal: store.journal(for: request))
+        let engine = engineFactory(store.journal(for: request))
         engine.keepCompletedJournal = true
         engine.onConflict = { [weak self] name, directory in
-            DispatchQueue.main.sync { self?.conflict(name, directory: directory, sameFolder: false) ?? Decision(.cancel) }
+            DispatchQueue.main.sync { self?.conflict(name, directory: directory, sameFolder: false) ?? Decision(.cancel, interrupted: true) }
         }
         engine.onSameFolderConflict = { [weak self] name, directory in
-            DispatchQueue.main.sync { self?.conflict(name, directory: directory, sameFolder: true) ?? Decision(.cancel) }
+            DispatchQueue.main.sync { self?.conflict(name, directory: directory, sameFolder: true) ?? Decision(.cancel, interrupted: true) }
         }
         engine.onProgress = { [weak self] progress in
             guard let self else { return }
@@ -189,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transferWindow.pauseButton.isEnabled = !request.cancelled
             if quitting { engine.pause() }
             else if transferWindow.paused { engine.suspend() }
+            if systemSleeping { engine.systemWillSleep() }
         }
         return engine
     }
@@ -197,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var request = savedRequest
         while true {
             let engine = makeEngine(request)
+            var network = request.sources.contains { $0.hasPrefix("/Volumes/") } || request.destination.hasPrefix("/Volumes/")
             do {
                 if request.cancelled {
                     if FileManager.default.fileExists(atPath: engine.journal.path) {
@@ -213,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         job = try prepare(engine, request: request)
                     }
                     configureInternetPriority(engine, job: job)
+                    network = engine.usesNetwork(job)
                     try engine.run(job)
                 }
                 try store.remove(request)
@@ -225,6 +282,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return request.cancelled ? "Transfer cancelled. Unverified originals were retained." : "Transfer complete."
             } catch {
                 if DispatchQueue.main.sync(execute: { quitting }) { throw error }
+                // An aborted system dialog is not the user's Cancel command.
+                // The next engine observes sleep/user-pause before retrying.
+                if case TransferError.interrupted = error { continue }
+                if !request.cancelled, engine.shouldRetry(error, network: network) {
+                    notice("Waiting for NAS access. Saved progress will resume automatically…")
+                    do { try engine.waitForRetry(5) }
+                    catch {
+                        if DispatchQueue.main.sync(execute: { quitting }) { throw error }
+                        guard DispatchQueue.main.sync(execute: { cancelRequested }) else { throw error }
+                        request.cancelled = true
+                        try store.save(request)
+                    }
+                    continue
+                }
                 if request.cancelled {
                     let network = request.sources.contains { $0.hasPrefix("/Volumes/") } || request.destination.hasPrefix("/Volumes/")
                     if engine.shouldRetry(error, network: network) {
@@ -237,7 +308,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return "Cancellation paused. Waiting for access to recover files safely."
                 }
                 let cancel: Bool
-                if case TransferError.stopped = error { cancel = true }
+                if case TransferError.stopped = error {
+                    guard DispatchQueue.main.sync(execute: { cancelRequested }) else {
+                        notice("Transfer was interrupted. Resuming its saved progress…")
+                        NSLog("mCopy: unexpected stop retained; retrying request %@ without cancellation.", request.id)
+                        continue
+                    }
+                    cancel = true
+                }
                 else {
                     cancel = DispatchQueue.main.sync {
                         transferWindow.waiting(error.localizedDescription)
@@ -292,7 +370,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .alertFirstButtonReturn: return Decision(.replace, all: alert.suppressionButton?.state == .on)
         case .alertSecondButtonReturn: return askName(name, directory: directory)
         case .alertThirdButtonReturn: return Decision(.skip, all: alert.suppressionButton?.state == .on)
-        default: return Decision(.cancel)
+        default:
+            if result.rawValue == NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1 {
+                cancelRequested = true
+                return Decision(.cancel)
+            }
+            return Decision(.cancel, interrupted: true)
         }
     }
 
@@ -307,7 +390,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Use This Name")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = input
-        return alert.runModal() == .alertFirstButtonReturn ? Decision(.rename, newName: input.stringValue) : Decision(.cancel)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn { return Decision(.rename, newName: input.stringValue) }
+        if response == .alertSecondButtonReturn { cancelRequested = true; return Decision(.cancel) }
+        return Decision(.cancel, interrupted: true)
     }
 
     func showError(_ title: String, _ error: Error) {
@@ -352,10 +438,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard running, let current = engine else { return }
         let alert = NSAlert()
         alert.messageText = "Cancel this transfer?"
-        alert.informativeText = "Completed copies are kept. Unverified originals are retained and partial files are recovered safely."
+        alert.informativeText = "Completed verified files stay at the destination. Unverified originals are kept, and mCopy's incomplete copies are removed safely. Cancel discards their transfer progress; choose Keep Transferring, then Pause if you want to resume later."
         alert.addButton(withTitle: "Keep Transferring")
         alert.addButton(withTitle: "Cancel Transfer")
         if alert.runModal() == .alertSecondButtonReturn, running, engine === current {
+            cancelRequested = true
             transferWindow.setPaused(false)
             transferWindow.pauseButton.isEnabled = false
             transferWindow.cancelButton.isEnabled = false

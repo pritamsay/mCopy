@@ -34,6 +34,7 @@ public final class TransferEngine {
     let stopLock = NSCondition()
     var stopRequested = false
     var suspended = false
+    var systemSleeping = false
     var pipelineFailure: Error?
     let stateLock = NSRecursiveLock()
     var activeJob: Job?
@@ -58,7 +59,9 @@ public final class TransferEngine {
     }
 
     func ioChunkSize(network: Bool) -> Int {
-        network && networkLimitMB > 0 ? 65_536 : chunkSize
+        let rate = networkLimitMB
+        guard network, rate > 0 else { return chunkSize }
+        return Int(max(1024, min(65_536, rate * 1_000_000 * 0.1)))
     }
 
     func paceNetwork(bytes: Int, network: Bool) throws {
@@ -95,12 +98,27 @@ public final class TransferEngine {
         stopLock.unlock()
     }
 
+    // System sleep never sets stopRequested: that flag means cancellation or
+    // process shutdown. Waking must also preserve a separate user Pause.
+    public func systemWillSleep() {
+        stopLock.lock()
+        systemSleeping = true
+        stopLock.unlock()
+    }
+
+    public func systemDidWake() {
+        stopLock.lock()
+        systemSleeping = false
+        stopLock.broadcast()
+        stopLock.unlock()
+    }
+
     public func checkCancellation() throws { try checkStop() }
     public func waitForRetry(_ seconds: Double) throws { try wait(seconds) }
 
     func checkStop() throws {
         stopLock.lock()
-        while suspended && !stopRequested && pipelineFailure == nil { stopLock.wait() }
+        while (suspended || systemSleeping) && !stopRequested && pipelineFailure == nil { stopLock.wait() }
         let stopped = stopRequested
         let failure = pipelineFailure
         stopLock.unlock()

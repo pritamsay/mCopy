@@ -34,6 +34,7 @@ struct NASSmoke {
         try text.write(to: original.appendingPathComponent("note.txt"))
 
         let copy = TransferEngine(journal: local.appendingPathComponent("copy.json"))
+        copy.networkLimitMB = 0.5 // Exercise the shared adaptive I/O budget on a real NAS.
         copy.onReconnect = { print($0) }
         let copyJob = try copy.prepare(sources: [original], destination: remote, move: false, limitMB: 0)
         guard copyJob.destination.network else { throw TransferError.unsafe("Destination was not identified as a NAS.") }
@@ -73,6 +74,7 @@ struct NASSmoke {
         print("PASS: existing NAS files replaced and verified.")
 
         let move = TransferEngine(journal: local.appendingPathComponent("move.json"))
+        move.networkLimitMB = 0.5
         move.onReconnect = { print($0) }
         try move.run(move.prepare(sources: [nasFolder], destination: returned, move: true, limitMB: 0))
         let result = returned.appendingPathComponent("TransferFolder")

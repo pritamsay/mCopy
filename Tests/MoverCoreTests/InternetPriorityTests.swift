@@ -32,6 +32,19 @@ final class InternetPriorityTests: XCTestCase {
         XCTAssertEqual(result.otherBytes, 100)
     }
 
+    func testFiniteSnapshotReturnsItsLastDeltaAtEndOfFile() throws {
+        var parser = WiFiTrafficParser()
+        _ = parser.consume(header)
+        _ = parser.consume("tcp4 192.168.1.2:5000<->192.168.1.3:445,en0,999999,999999,")
+        XCTAssertNil(parser.consume(header))
+        _ = parser.consume("tcp4 192.168.1.2:5000<->192.168.1.3:445,en0,100,200,")
+        XCTAssertEqual(try XCTUnwrap(parser.finish()).nasBytes, 300)
+        XCTAssertNil(parser.finish())
+        var cumulativeOnly = WiFiTrafficParser()
+        _ = cumulativeOnly.consume(header)
+        XCTAssertNil(cumulativeOnly.finish())
+    }
+
     func testIdleIsUnrestrictedAndIncreasingInternetTrafficReducesNASBudget() {
         var policy = InternetPriority()
         let idle = policy.update(WiFiTraffic(nasBytes: 20_000_000, otherBytes: 0, hasNASConnection: true), seconds: 1, at: 0)
@@ -59,6 +72,44 @@ final class InternetPriorityTests: XCTestCase {
         var policy = InternetPriority()
         let result = policy.update(WiFiTraffic(nasBytes: 0, otherBytes: 20_000_000, hasNASConnection: false), seconds: 1, at: 1)
         XCTAssertEqual(result.limitMB, 0)
+    }
+
+    func testInternetAlreadyActiveAtStartupDoesNotLockNASToBackgroundTrafficSpeed() {
+        var policy = InternetPriority()
+        let waiting = policy.update(WiFiTraffic(nasBytes: 0, otherBytes: 100_000, hasNASConnection: true), seconds: 1, at: 0)
+        XCTAssertEqual(waiting.limitMB, 0)
+        let first = policy.update(WiFiTraffic(nasBytes: 20_000_000, otherBytes: 100_000, hasNASConnection: true), seconds: 1, at: 1)
+        XCTAssertEqual(first.limitMB, 0)
+        let learned = policy.update(WiFiTraffic(nasBytes: 20_000_000, otherBytes: 100_000, hasNASConnection: true), seconds: 1, at: 2)
+        XCTAssertGreaterThan(learned.limitMB, 10)
+    }
+
+    func testSmallBackgroundTrafficDoesNotKeepSlowingNAS() {
+        var policy = InternetPriority()
+        for time in 0..<8 {
+            let result = policy.update(WiFiTraffic(nasBytes: 20_000_000, otherBytes: 20_000, hasNASConnection: true), seconds: 1, at: Double(time))
+            XCTAssertEqual(result.limitMB, 0)
+        }
+    }
+
+    func testNASMetadataAtStartupIsNotMistakenForBulkTransferCapacity() {
+        var policy = InternetPriority()
+        for time in 0..<4 {
+            let result = policy.update(WiFiTraffic(nasBytes: 300, otherBytes: 100_000, hasNASConnection: true), seconds: 1, at: Double(time))
+            XCTAssertEqual(result.limitMB, 0)
+        }
+        _ = policy.update(WiFiTraffic(nasBytes: 20_000_000, otherBytes: 100_000, hasNASConnection: true), seconds: 1, at: 4)
+        let learned = policy.update(WiFiTraffic(nasBytes: 20_000_000, otherBytes: 100_000, hasNASConnection: true), seconds: 1, at: 5)
+        XCTAssertGreaterThan(learned.limitMB, 10)
+    }
+
+    func testLowRateSpendsSmallAmountsContinuouslyInsteadOfWaitingForWholeChunk() {
+        let budget = NetworkBandwidth()
+        budget.setLimitMB(0.001, at: 0)
+        XCTAssertLessThanOrEqual(budget.take(65_536, at: 0).wait, 0.05)
+        XCTAssertEqual(budget.take(65_536, at: 0.05).bytes, 50)
+        XCTAssertEqual(budget.take(65_536, at: 0.1).bytes, 50)
+        XCTAssertEqual(budget.take(65_536, at: 0.15).bytes, 49, accuracy: 1)
     }
 
     func testCopyAndVerificationShareTheSameTokens() {

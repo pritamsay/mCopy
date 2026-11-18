@@ -2,12 +2,14 @@ import Foundation
 
 public enum TransferError: LocalizedError {
     case stopped
+    case interrupted
     case unavailable(String)
     case unsafe(String)
 
     public var errorDescription: String? {
         switch self {
         case .stopped: return "Paused. Resume when you are ready."
+        case .interrupted: return "Transfer interrupted. Saved progress was retained for resuming."
         case .unavailable(let message), .unsafe(let message): return message
         }
     }
@@ -21,11 +23,13 @@ public struct Decision {
     public var choice: Choice
     public var applyToAll: Bool
     public var newName: String?
+    public var interrupted: Bool
 
-    public init(_ choice: Choice, all: Bool = false, newName: String? = nil) {
+    public init(_ choice: Choice, all: Bool = false, newName: String? = nil, interrupted: Bool = false) {
         self.choice = choice
         self.applyToAll = all
         self.newName = newName
+        self.interrupted = interrupted
     }
 }
 

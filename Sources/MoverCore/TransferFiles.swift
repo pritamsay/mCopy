@@ -27,6 +27,7 @@ extension TransferEngine {
             let sameItem = source.path == target.path || entry.sourceStamp.sameFile(as: destinationStamp)
             let decision = sameItem ? onSameFolderConflict(target.lastPathComponent, entry.directory) :
                 (allChoice.map { Decision($0) } ?? onConflict(target.lastPathComponent, entry.directory))
+            guard !decision.interrupted else { throw TransferError.interrupted }
             if !sameItem, decision.applyToAll, decision.choice != .cancel { allChoice = decision.choice }
             switch decision.choice {
             case .cancel:

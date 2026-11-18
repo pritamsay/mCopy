@@ -22,6 +22,7 @@ public struct InternetPriority {
     var activeCapacity = 0.0
     var lastActivity = -Double.infinity
     var demand = 0.0
+    var startupSamples = 0
 
     public init() {}
 
@@ -29,18 +30,22 @@ public struct InternetPriority {
         let duration = max(0.1, seconds)
         let nas = Double(max(0, traffic.nasBytes)) / duration
         let other = Double(max(0, traffic.otherBytes)) / duration
-        if other >= 16_384 { lastActivity = time }
+        let bulkNAS = nas >= 65_536
+        if other >= 65_536 { lastActivity = time }
         let busy = time - lastActivity < 3
         guard busy else {
-            idleCapacity = max(nas, idleCapacity * 0.98)
+            if bulkNAS { idleCapacity = max(nas, idleCapacity * 0.98) }
             activeCapacity = 0
             demand = 0
             return InternetAllowance(limitMB: 0, internetActive: false)
         }
         demand = max(other, demand * 0.7)
-        if activeCapacity == 0 {
-            // Learn from actual traffic rather than imposing a fixed MB/s cap.
-            activeCapacity = max(idleCapacity, nas + other)
+        // Starting while a browser is already active must not teach the policy
+        // that tiny background traffic is the Wi-Fi link's entire capacity.
+        if bulkNAS { startupSamples += 1 }
+        activeCapacity = max(activeCapacity, idleCapacity, bulkNAS ? nas + other : 0)
+        if idleCapacity == 0 && startupSamples < 2 {
+            return InternetAllowance(limitMB: 0, internetActive: busy)
         }
         guard traffic.hasNASConnection, activeCapacity > 0 else {
             return InternetAllowance(limitMB: 0, internetActive: true)
@@ -64,6 +69,13 @@ public struct WiFiTrafficParser {
     var hasNAS = false
 
     public init() {}
+
+    // Finite nettop logging ends after its last rows, without another header.
+    public mutating func finish() -> WiFiTraffic? {
+        guard haveHeader, !skipFirst else { return nil }
+        haveHeader = false
+        return WiFiTraffic(nasBytes: nas, otherBytes: other, hasNASConnection: hasNAS)
+    }
 
     public mutating func consume(_ line: String) -> WiFiTraffic? {
         let fields = line.split(separator: ",", omittingEmptySubsequences: false)

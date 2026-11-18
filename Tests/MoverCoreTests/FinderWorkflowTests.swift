@@ -88,4 +88,25 @@ final class FinderWorkflowTests: XCTestCase {
         try restarted.remove(first)
         XCTAssertEqual(try restarted.pending().map(\.id), [second.id])
     }
+
+    func testRestartRetriesRetainedRequestsWithoutTurningCancellationIntoAnotherMove() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mycopy-queue-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = RequestStore(directory: directory)
+        var interrupted = TransferRequest(sources: [directory.appendingPathComponent("original")], destination: directory, move: true, token: "interrupted")
+        interrupted.paused = true
+        var cancelled = interrupted
+        cancelled.id = UUID().uuidString
+        cancelled.cancelled = true
+        try store.save(interrupted)
+        try store.save(cancelled)
+        XCTAssertTrue(try store.pending().isEmpty)
+        let restarted = RequestStore(directory: directory)
+        try restarted.resumeRetained()
+        let requests = try restarted.pending()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertFalse(try XCTUnwrap(requests.first { $0.id == interrupted.id }).cancelled)
+        XCTAssertTrue(try XCTUnwrap(requests.first { $0.id == cancelled.id }).cancelled)
+        XCTAssertTrue(requests.allSatisfy { !$0.paused })
+    }
 }

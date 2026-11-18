@@ -8,7 +8,7 @@ enum Management {
 
     static func runIfRequested() -> Bool {
         guard let command = CommandLine.arguments.dropFirst().first,
-              ["--status", "--self-test", "--ui-self-test", "--network-self-test", "--stop", "--register-login", "--unregister-login", "--prepare-uninstall", "--prepare-test-uninstall"].contains(command) else { return false }
+              ["--status", "--self-test", "--ui-self-test", "--network-self-test", "--power-self-test", "--recovery-self-test", "--stop", "--register-login", "--unregister-login", "--prepare-uninstall", "--prepare-test-uninstall"].contains(command) else { return false }
         do {
             switch command {
             case "--self-test":
@@ -17,6 +17,10 @@ enum Management {
                 try UISelfTest.run()
             case "--network-self-test":
                 try InternetPriorityMonitor.selfTest()
+            case "--power-self-test":
+                try TransferPower.selfTest()
+            case "--recovery-self-test":
+                try RecoverySelfTest.run()
             case "--prepare-test-uninstall":
                 guard CommandLine.arguments.count == 3 else { throw TransferError.unsafe("An isolated test root is required.") }
                 let root = URL(fileURLWithPath: CommandLine.arguments[2]).resolvingSymlinksInPath()

@@ -66,22 +66,50 @@ final class InternetPriorityMonitor {
     }
 
     func readCounters(token: Int) {
+        var policy = InternetPriority()
+        while true {
+            lock.lock()
+            let current = token == generation
+            lock.unlock()
+            guard current else { return }
+            let started = ProcessInfo.processInfo.systemUptime
+            let traffic = readSnapshot(token: token)
+            let now = ProcessInfo.processInfo.systemUptime
+            lock.lock()
+            guard token == generation else { lock.unlock(); return }
+            if let traffic {
+                let allowance = policy.update(traffic, seconds: max(1, now - started), at: now)
+                status = InternetPriorityStatus(available: true, active: allowance.internetActive, limitMB: allowance.limitMB)
+                lastSample = now
+                engine?.networkLimitMB = allowance.limitMB
+            } else {
+                status = InternetPriorityStatus()
+                engine?.networkLimitMB = 0
+            }
+            lock.unlock()
+            // A failing utility must not turn into a tight process-spawn loop.
+            if traffic == nil { Thread.sleep(forTimeInterval: 1) }
+        }
+    }
+
+    func readSnapshot(token: Int) -> WiFiTraffic? {
         let task = Process()
         let output = Pipe()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
-        task.arguments = ["-n", "-x", "-d", "-L", "0", "-s", "1", "-t", "wifi", "-J", "interface,bytes_in,bytes_out"]
+        // Two samples give one fresh delta. Ending the command flushes CSV
+        // output even when quiet traffic would leave an endless pipe buffered.
+        task.arguments = ["-n", "-x", "-d", "-L", "2", "-s", "1", "-t", "wifi", "-J", "interface,bytes_in,bytes_out"]
         task.standardOutput = output
         task.standardError = FileHandle.nullDevice
         lock.lock()
-        guard token == generation else { lock.unlock(); return }
+        guard token == generation else { lock.unlock(); return nil }
         process = task
         do { try task.run() }
-        catch { process = nil; lock.unlock(); return }
+        catch { process = nil; lock.unlock(); return nil }
         lock.unlock()
         var parser = WiFiTrafficParser()
-        var policy = InternetPriority()
         var pending = Data()
-        var previousTime: Double?
+        var oversized = false
         while true {
             let data = output.fileHandleForReading.availableData
             if data.isEmpty { break }
@@ -89,25 +117,18 @@ final class InternetPriorityMonitor {
             while let end = pending.firstIndex(of: 10) {
                 let line = String(decoding: pending[..<end], as: UTF8.self)
                 pending.removeSubrange(...end)
-                guard let traffic = parser.consume(line) else { continue }
-                let now = ProcessInfo.processInfo.systemUptime
-                let seconds = previousTime.map { max(0.1, now - $0) } ?? 1
-                previousTime = now
-                let allowance = policy.update(traffic, seconds: seconds, at: now)
-                lock.lock()
-                guard token == generation else { lock.unlock(); return }
-                status = InternetPriorityStatus(available: true, active: allowance.internetActive, limitMB: allowance.limitMB)
-                lastSample = now
-                engine?.networkLimitMB = allowance.limitMB
-                lock.unlock()
+                _ = parser.consume(line)
             }
-            if pending.count > 1_048_576 { break }
+            if pending.count > 1_048_576 { oversized = true; break }
         }
         lock.lock()
-        let current = token == generation ? engine : nil
-        if token == generation { status = InternetPriorityStatus(); process = nil }
-        current?.networkLimitMB = 0
+        let current = token == generation
+        if current { process = nil }
         lock.unlock()
-        if task.isRunning { task.terminate() }
+        if oversized, task.isRunning { task.terminate() }
+        task.waitUntilExit()
+        guard current, task.terminationStatus == 0, pending.count <= 1_048_576 else { return nil }
+        if !pending.isEmpty { _ = parser.consume(String(decoding: pending, as: UTF8.self)) }
+        return parser.finish()
     }
 }

@@ -614,6 +614,89 @@ final class TransferEngineTests: XCTestCase {
         XCTAssertFalse(files.fileExists(atPath: original.path))
     }
 
+    func testSystemWakeResumesTheHalfCopiedMoveWithoutCancellingIt() throws {
+        let original = try largeFile()
+        let engine = TransferEngine(journal: journal)
+        let sleeping = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        var failure: Error?
+        var first = true
+        engine.afterChunk = {
+            if first { first = false; engine.systemWillSleep(); sleeping.signal() }
+        }
+        let job = try prepare(engine, [original], move: true)
+        DispatchQueue.global().async {
+            do { try engine.run(job) } catch { failure = error }
+            finished.signal()
+        }
+        XCTAssertEqual(sleeping.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(finished.wait(timeout: .now() + 0.1), .timedOut)
+        XCTAssertTrue(files.fileExists(atPath: original.path))
+        XCTAssertTrue(files.fileExists(atPath: journal.path))
+        engine.systemDidWake()
+        XCTAssertEqual(finished.wait(timeout: .now() + 5), .success)
+        XCTAssertNil(failure)
+        XCTAssertFalse(files.fileExists(atPath: original.path))
+        XCTAssertEqual(try Data(contentsOf: target("large.bin")).count, 3 * 1_048_576)
+    }
+
+    func testSystemWakePreservesASeparateUserPause() throws {
+        let engine = TransferEngine(journal: journal)
+        let checked = DispatchSemaphore(value: 0)
+        engine.suspend()
+        engine.systemWillSleep()
+        engine.systemDidWake()
+        DispatchQueue.global().async { try? engine.checkCancellation(); checked.signal() }
+        XCTAssertEqual(checked.wait(timeout: .now() + 0.1), .timedOut)
+        engine.resume()
+        XCTAssertEqual(checked.wait(timeout: .now() + 1), .success)
+    }
+
+    func testInterruptedConflictRetainsOriginalAndJournalInsteadOfCancellingMove() throws {
+        let original = try write(text: "new contents")
+        try Data("old contents".utf8).write(to: target())
+        let engine = TransferEngine(journal: journal)
+        engine.onConflict = { _, _ in Decision(.cancel, interrupted: true) }
+        let job = try prepare(engine, [original], move: true)
+        XCTAssertThrowsError(try engine.run(job)) { error in
+            guard case TransferError.interrupted = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        XCTAssertEqual(try contents(original), "new contents")
+        XCTAssertEqual(try contents(target()), "old contents")
+        XCTAssertTrue(files.fileExists(atPath: journal.path))
+        let restarted = TransferEngine(journal: journal)
+        restarted.onConflict = { _, _ in Decision(.replace) }
+        try restarted.run(restarted.load())
+        XCTAssertEqual(try contents(target()), "new contents")
+        XCTAssertFalse(files.fileExists(atPath: original.path))
+    }
+
+    func testShutdownDuringSystemSleepLeavesPartialForANewEngineToResume() throws {
+        let original = try largeFile()
+        let first = TransferEngine(journal: journal)
+        let sleeping = DispatchSemaphore(value: 0)
+        let stopped = DispatchSemaphore(value: 0)
+        first.afterChunk = { first.systemWillSleep(); sleeping.signal() }
+        let job = try prepare(first, [original], move: true)
+        DispatchQueue.global().async {
+            do { try first.run(job); XCTFail("Expected safe shutdown") }
+            catch { guard case TransferError.stopped = error else { XCTFail("Unexpected shutdown error: \(error)"); stopped.signal(); return } }
+            stopped.signal()
+        }
+        XCTAssertEqual(sleeping.wait(timeout: .now() + 5), .success)
+        first.pause()
+        XCTAssertEqual(stopped.wait(timeout: .now() + 5), .success)
+        XCTAssertTrue(files.fileExists(atPath: original.path))
+        XCTAssertEqual(try hiddenFiles().count, 1)
+        let restarted = TransferEngine(journal: journal)
+        var written: Int64 = 0
+        restarted.onProgress = { if $0.fraction == 1 { written = $0.writtenBytes } }
+        try restarted.run(restarted.load())
+        XCTAssertEqual(written, 2 * 1_048_576)
+        XCTAssertFalse(files.fileExists(atPath: original.path))
+        XCTAssertEqual(try Data(contentsOf: target("large.bin")).count, 3 * 1_048_576)
+    }
+
     func testUserPauseDuringVerificationRetainsMoveOriginal() throws {
         let original = try largeFile()
         let engine = TransferEngine(journal: journal)
